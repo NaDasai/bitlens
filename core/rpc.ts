@@ -2,7 +2,17 @@
  * Minimal NEAR JSON-RPC client. Read-only: only `query` view requests are
  * ever sent. NEAR X-Ray never signs or submits transactions to any network.
  */
+import { EnvHttpProxyAgent, fetch as undiciFetch } from "undici";
 import { assertAccountId } from "./accountId.js";
+
+// Node's global fetch ignores HTTPS_PROXY. If a proxy is configured, route RPC
+// calls through it (NO_PROXY is honoured, so local test RPCs still go direct).
+const PROXY_SET = Boolean(
+  process.env.HTTPS_PROXY || process.env.https_proxy || process.env.HTTP_PROXY || process.env.http_proxy,
+);
+const proxyAgent = PROXY_SET ? new EnvHttpProxyAgent() : undefined;
+const httpFetch = (url: string, init: Parameters<typeof undiciFetch>[1]) =>
+  proxyAgent ? undiciFetch(url, { ...init, dispatcher: proxyAgent }) : undiciFetch(url, init);
 
 export const DEFAULT_RPC_URLS = [
   "https://free.rpc.fastnear.com",
@@ -60,13 +70,13 @@ async function rpcQuery<T>(params: Record<string, unknown>, opts?: RpcOptions): 
   for (const rpcUrl of urls) {
     let body: any;
     try {
-      const res = await fetch(rpcUrl, {
+      const res = await httpFetch(rpcUrl, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ jsonrpc: "2.0", id: "near-xray", method: "query", params }),
         signal: AbortSignal.timeout(opts?.timeoutMs ?? 15_000),
       });
-      body = await res.json().catch(() => undefined);
+      body = (await res.json().catch(() => undefined)) as any;
       if (!body && !res.ok) throw new Error(`HTTP ${res.status}`);
     } catch (e: any) {
       // Network / timeout / non-JSON: try the next endpoint.

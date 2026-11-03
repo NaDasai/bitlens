@@ -39,22 +39,31 @@ Method-name heuristics: non-standard methods are "notable". Of those, any name c
 
 Prerequisites: Node.js 20 or later, and outbound HTTPS to a NEAR RPC.
 
+Verified expected output (mainnet, Nov 2026):
+
+| Account | Methods | Standards | Strong capabilities | Risk |
+|---|---|---|---|---|
+| `wrap.near` | 15 | NEP-141/145/148 | 💰 sends NEAR (`near_withdraw`); no full-access keys | MEDIUM |
+| `token.sweat` | 60 | NEP-141/145/148/330 | 🔴 redeploys (`up_deploy_code`); 16 admin-looking `acl_*` methods | HIGH |
+| `aurora` | 77 | NEP-141/148 | 🔴 adds full-access keys (`attach_full_access_key`), 🔴 redeploys (`upgrade`), 🟠 function-call keys, 💰 sends NEAR; 1 full-access key | HIGH |
+
 1. `npm install`
 2. `npm test` → expect `# pass 6`, `# fail 0`. This covers account-id validation, capability detection, and RPC error handling against a local fake RPC.
-3. `npm run scan -- wrap.near token.sweat aurora` → one risk card per account (methods, standards, capabilities with the exact import as evidence, privileged methods, risk level).
-4. `npm run server`, then `curl "http://localhost:8787/scan?account_id=wrap.near"` → the risk card as JSON. `POST /scan` with `{"account_id":"..."}` works too.
+3. `npm run test:live` → expect `# pass 2`. This scans wrap.near, token.sweat and aurora on mainnet, checks each locally computed code hash against the RPC's, and checks `UNKNOWN_ACCOUNT` / `NO_CONTRACT_CODE`.
+4. `npm run scan -- wrap.near token.sweat aurora` → one risk card per account (methods, standards, capabilities with the exact import as evidence, privileged methods, risk level).
+5. `npm run server`, then `curl "http://localhost:8787/scan?account_id=wrap.near"` → the risk card as JSON. `POST /scan` with `{"account_id":"..."}` works too.
 
 Error cases, each returned with a clear code:
 - `curl "localhost:8787/scan?account_id=Bad..Id"` → HTTP 400 `INVALID_ACCOUNT_ID`
-- An account that does not exist → HTTP 404 `UNKNOWN_ACCOUNT`
-- A wallet account with no contract → HTTP 404 `NO_CONTRACT_CODE`
+- `account_id=xray-no-such-account-4242.near` → HTTP 404 `UNKNOWN_ACCOUNT`
+- `account_id=root.near` (a wallet, no contract) → HTTP 404 `NO_CONTRACT_CODE`
 - RPC unreachable → HTTP 502 `RPC_UNAVAILABLE`
 
 Options:
 - `NEAR_RPC_URL=https://rpc.testnet.near.org npm run scan -- <testnet-account>` uses a different RPC. Comma-separate several URLs to try them in order.
 - `npm run scan -- <id> --json` prints the raw card.
 - **Offline:** `./scripts/fetch-reference-wasm.sh`, then `npm run scan -- --wasm fixtures/reference/aurora.wasm` scans a local WASM file. The script downloads public GitHub builds of wrap.near, Aurora and SWEAT. They are not guaranteed byte-identical to the deployed code.
-- Behind an HTTP proxy, Node's `fetch` ignores `HTTPS_PROXY` unless you set `NODE_USE_ENV_PROXY=1` (Node 22.21 or later).
+- `HTTPS_PROXY` / `NO_PROXY` are honoured automatically.
 
 ## Repo layout
 
