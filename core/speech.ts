@@ -85,7 +85,8 @@ ARGUMENTS:
   (account fields = the signer's account, amount = 1 NEAR, a valid tiny WASM in "code", the attacker's
   key in "public_key"). Only put the args you need to change in "args", usually just "amount"
   (e.g. {"amount":"5000000000000000000000000"}), or {} for none.
-- Never invent byte payloads (WASM, keys, hex, base64) and never guess other argument names.
+- Never invent byte payloads (WASM, keys, hex, base64): "code" and "public_key" are always replaced by
+  X-Ray's own valid values. Never guess other argument names.
 
 RULES:
 - Output ONLY the JSON object. Use ONLY method names from the contract's list below.
@@ -96,7 +97,8 @@ RULES:
 
 /**
  * Fill each call's args with the standard argument set the presets use (the
- * model cannot know argument names from bytecode); the model's own args win.
+ * model cannot know argument names from bytecode); the model's own args win,
+ * except the byte payloads "code" and "public_key", which are always X-Ray's.
  */
 function withStandardArgs(sc: Scenario): Scenario {
   const fill = (steps: any[]): any[] =>
@@ -104,7 +106,9 @@ function withStandardArgs(sc: Scenario): Scenario {
       if (st.op === "sweep") return { ...st, steps: fill(st.steps) };
       if (st.op !== "call") return st;
       const who = SIM_ACCOUNTS[st.as as keyof typeof SIM_ACCOUNTS];
-      return { ...st, args: { ...kitchenSinkArgs(who), ...(st.args ?? {}) } };
+      const std = kitchenSinkArgs(who);
+      // Byte payloads always come from X-Ray (a valid tiny WASM, the attacker's key): a model can't produce valid ones.
+      return { ...st, args: { ...std, ...(st.args ?? {}), code: std.code, public_key: std.public_key } };
     });
   return validateScenario({ ...sc, steps: fill(sc.steps as any[]) });
 }
