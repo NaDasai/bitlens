@@ -231,7 +231,7 @@ async function loadAttacks(accountId) {
       "label",
       { class: "atk" },
       h("input", { type: "checkbox", value: a.id, checked: "checked" }),
-      h("div", {}, h("div", { class: "lbl" }, a.name), h("div", { class: "why" }, a.checks)),
+      h("div", {}, h("div", { class: "lbl" }, a.name), h("div", { class: "why" }, a.description)),
     ),
   );
   const run = h("button", { id: "run-btn", type: "button" }, `Run ${list.length} attack${list.length > 1 ? "s" : ""}`);

@@ -1,7 +1,9 @@
 /**
  * Layer 2: attack proof.
- *   risk card → suggested scenarios (hand-written templates, filled with
- *   method names from the card) → runner spec → near-contract-sim → results.
+ *   risk card → suggested scenarios (canned scenario JSON from
+ *   scenarios/presets/, filled with method names from the card) → runner spec
+ *   → near-contract-sim → results. Custom scenarios (hand-written, or
+ *   translated from English by speech.ts) are the same JSON.
  */
 import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -11,27 +13,30 @@ import { base58, scanWithCode, type RiskCard } from "./scan.js";
 import { DEMO_CONTRACTS, readDemoWasm } from "./demo.js";
 import { runSpec } from "./engine.js";
 import { InputError } from "./errors.js";
+import { fillPreset, validateScenario, type Scenario } from "./scenario.js";
 import type { RpcOptions } from "./rpc.js";
 
 export const SIM_ACCOUNTS = { owner: "owner.near", victim: "victim.near", attacker: "attacker.near", user: "user.near" };
 
+/** Preset file the scenario came from, or "custom". */
 export type AttackKind =
   | "unauthorized_call"
   | "unauthorized_add_key"
   | "double_withdraw"
   | "failed_transfer_refund"
   | "callback_gas"
-  | "yield_timeout";
+  | "yield_timeout"
+  | "custom";
 
 export interface AttackScenario {
   id: string;
   name: string;
   kind: AttackKind;
   /** What the scenario checks, in one sentence. */
-  checks: string;
-  target_method: string;
-  /** Runner parameters (method names, args). */
-  params: Record<string, unknown>;
+  description: string;
+  target_method?: string;
+  /** The scenario JSON the runner executes. */
+  scenario: Scenario;
 }
 
 export type AttackStatus = "held" | "broken" | "inconclusive" | "not_applicable" | "error";
@@ -131,9 +136,18 @@ function findWithdraw(card: RiskCard): string | undefined {
 const has = (card: RiskCard, id: string) => card.capabilities.some((c) => c.id === id);
 
 /** Derive the attack list from the risk card. Pure: no network, no sim. */
+const FIVE_NEAR = "5000000000000000000000000";
+
+function preset(kind: Exclude<AttackKind, "custom">, file: string, params: Record<string, unknown>, target?: string): AttackScenario {
+  const scenario = fillPreset(file, params);
+  return { id: scenario.id, name: scenario.name, kind, description: scenario.description ?? "", target_method: target, scenario };
+}
+
+/** Derive the attack list from the risk card. Pure: no network, no sim. */
 export function suggestAttacks(card: RiskCard): AttackScenario[] {
   const out: AttackScenario[] = [];
   const attacker = SIM_ACCOUNTS.attacker;
+  const contract = card.account_id;
   const keyMethods = new Set(
     card.capabilities
       .filter((c) => c.id === "add_full_access_key" || c.id === "add_function_call_key")
@@ -142,82 +156,41 @@ export function suggestAttacks(card: RiskCard): AttackScenario[] {
 
   // 2. Unauthorised key addition (before 1, so the key methods get the stronger check).
   for (const m of keyMethods) {
-    out.push({
-      id: `addkey:${m}`,
-      name: `Unauthorised key addition via ${m}`,
-      kind: "unauthorized_add_key",
-      checks: `attacker.near calls \`${m}\` with its own public key; the contract must refuse to add it.`,
-      target_method: m,
-      params: { method: m, args: kitchenSinkArgs(attacker) },
-    });
+    out.push(preset("unauthorized_add_key", "unauthorized_add_key", { method: m, args: kitchenSinkArgs(attacker), contract }, m));
   }
 
   // 1. Unauthorised privileged call, for each privileged-looking method.
   for (const m of card.notable_methods.filter((x) => x.privileged && !keyMethods.has(x.name)).slice(0, 15)) {
     const cb = CALLBACK_RE.test(m.name);
-    out.push({
-      id: `unauth:${m.name}`,
-      name: cb ? `Direct call to callback ${m.name}` : `Unauthorised call to ${m.name}`,
-      kind: "unauthorized_call",
-      checks: cb
+    const params = {
+      method: m.name,
+      args: kitchenSinkArgs(attacker),
+      contract,
+      title: cb ? `Direct call to callback ${m.name}` : `Unauthorised call to ${m.name}`,
+      summary: cb
         ? `attacker.near calls the callback \`${m.name}\` directly; it must be private to the contract.`
         : `attacker.near (not the owner) calls \`${m.name}\`; it must be rejected or have no effect.`,
-      target_method: m.name,
-      params: { method: m.name, args: kitchenSinkArgs(attacker) },
-    });
+    };
+    out.push(preset("unauthorized_call", "unauthorized_call", params, m.name));
   }
 
   // 3-5. Withdraw-flow attacks: need a deposit + withdraw pair and the ability to send NEAR.
   const dep = findDeposit(card);
   const wd = findWithdraw(card);
-  if (dep && wd && has(card, "transfer")) {
-    const p = { deposit_method: dep, withdraw_method: wd, amount_arg: "amount" };
-    if (has(card, "callbacks")) {
-      out.push({
-        id: "double_withdraw",
-        name: `Double-spend: two ${wd} calls before the callback resolves`,
-        kind: "double_withdraw",
-        checks: `Deposit 5 NEAR, send two \`${wd}\`(5 NEAR) calls in the same block; no more than 5 NEAR may come out.`,
-        target_method: wd,
-        params: p,
-      });
-    }
-    out.push({
-      id: "failed_transfer_refund",
-      name: `Failed-transfer refund in ${wd}`,
-      kind: "failed_transfer_refund",
-      checks: `Make the payout transfer of \`${wd}\` fail; the user's balance must be restored, nothing lost or stuck.`,
-      target_method: wd,
-      params: p,
-    });
-    if (has(card, "callbacks")) {
-      out.push({
-        id: "callback_gas",
-        name: `Callback out-of-gas in ${wd}`,
-        kind: "callback_gas",
-        checks: `Call \`${wd}\` with 8-300 Tgas; at every budget, funds paid + funds still withdrawable must equal the deposit.`,
-        target_method: wd,
-        params: p,
-      });
-    }
+  const flow = dep && wd ? { deposit: dep, withdraw: wd, amount_arg: "amount" } : null;
+  if (flow && has(card, "transfer")) {
+    if (has(card, "callbacks")) out.push(preset("double_withdraw", "double_withdraw", flow, wd));
+    out.push(preset("failed_transfer_refund", "failed_transfer_refund", flow, wd));
+    if (has(card, "callbacks")) out.push(preset("callback_gas", "callback_gas", flow, wd));
   }
 
   // 6. Stale yield / timeout. With a deposit/withdraw pair the user is funded first,
   // so the runner can check the timed-out request's NEAR comes back.
   if (has(card, "yield_resume")) {
-    const flow = dep && wd ? { deposit_method: dep, withdraw_method: wd, amount_arg: "amount" } : {};
     const candidates = custom(card).filter((m) => !VIEW_RE.test(m) && !CALLBACK_RE.test(m) && /request|yield|sign|wait|ask/.test(m));
     for (const m of candidates.slice(0, 3)) {
-      out.push({
-        id: `yield:${m}`,
-        name: `Stale yield / timeout in ${m}`,
-        kind: "yield_timeout",
-        checks: dep && wd
-          ? `Deposit 5 NEAR, call \`${m}\` for it, never resume, advance past the yield deadline; the timeout must resolve cleanly and the 5 NEAR must come back.`
-          : `Call \`${m}\`, never resume it, advance the clock past the yield deadline; it must resolve cleanly.`,
-        target_method: m,
-        params: { method: m, args: kitchenSinkArgs(SIM_ACCOUNTS.user), ...flow },
-      });
+      const args = { ...kitchenSinkArgs(SIM_ACCOUNTS.user), ...(flow ? { [flow.amount_arg]: FIVE_NEAR } : {}) };
+      out.push(flow ? preset("yield_timeout", "yield_timeout", { ...flow, method: m, args }, m) : preset("yield_timeout", "yield_timeout_plain", { method: m, args }, m));
     }
   }
   return out;
@@ -247,7 +220,7 @@ export function buildSpec(card: RiskCard, wasmPath: string, scenarios: AttackSce
     contract_id: card.account_id,
     init_candidates: initCandidates(card),
     deposit_method: findDeposit(card) ?? null,
-    scenarios: scenarios.map((s) => ({ id: s.id, name: s.name, kind: s.kind, ...s.params })),
+    scenarios: scenarios.map((s) => s.scenario),
   };
 }
 
@@ -261,16 +234,36 @@ export async function listAttacks(accountId: string, opts?: RpcOptions) {
  * Run the chosen scenarios (default: all suggested) against the contract's real
  * bytecode in near-contract-sim. Local only: nothing is sent to any network.
  */
-export async function runAttacks(accountId: string, scenarioIds?: string[], opts?: RpcOptions): Promise<{ card: RiskCard; report: AttackReport }> {
+/** Wrap custom scenario JSON (validated) as attacks. */
+export function customAttacks(scenarios: unknown[]): AttackScenario[] {
+  if (scenarios.length > 10) throw new InputError("At most 10 custom scenarios per run");
+  return scenarios.map((raw) => {
+    const scenario = validateScenario(raw);
+    return { id: scenario.id, name: scenario.name, kind: "custom" as const, description: scenario.description ?? "", scenario };
+  });
+}
+
+/**
+ * Run attacks in the sim. `scenarioIds` picks among the suggested presets
+ * (all of them when omitted and no custom scenarios are given); `custom` adds
+ * scenario JSON objects (validated here and again by the runner).
+ */
+export async function runAttacks(
+  accountId: string,
+  scenarioIds?: string[],
+  opts?: RpcOptions & { custom?: unknown[] },
+): Promise<{ card: RiskCard; report: AttackReport }> {
   const t0 = Date.now();
+  const extra = customAttacks(opts?.custom ?? []);
   const { card, wasm } = await scanWithCode(accountId, opts);
   const all = suggestAttacks(card);
-  let chosen = all;
+  let chosen = extra.length && !scenarioIds?.length ? [] : all;
   if (scenarioIds?.length) {
     const unknown = scenarioIds.filter((id) => !all.some((a) => a.id === id));
     if (unknown.length) throw new InputError(`Unknown scenario id(s) for ${card.account_id}: ${unknown.join(", ")}. Valid: ${all.map((a) => a.id).join(", ") || "(none)"}`);
     chosen = all.filter((a) => scenarioIds.includes(a.id));
   }
+  chosen = [...chosen, ...extra];
   if (!chosen.length) {
     return {
       card,

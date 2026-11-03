@@ -138,7 +138,7 @@ server.registerTool(
   async ({ account_id }) => {
     try {
       const { card, attacks } = await listAttacks(assertAccountId(account_id));
-      const data = { account_id: card.account_id, attacks: attacks.map((a) => ({ id: a.id, name: a.name, kind: a.kind, checks: a.checks })) };
+      const data = { account_id: card.account_id, attacks: attacks.map((a) => ({ id: a.id, name: a.name, kind: a.kind, checks: a.description })) };
       return ok(`${attacks.length} attack scenario(s) apply to ${card.account_id}.`, data);
     } catch (e) {
       return fail(e);

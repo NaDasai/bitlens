@@ -1,0 +1,19 @@
+{
+  "id": "double_withdraw",
+  "name": "Double-spend: two {{withdraw}} calls before the callback resolves",
+  "description": "Deposit 5 NEAR, send two `{{withdraw}}`(5 NEAR) calls in the same block; no more than 5 NEAR may come out.",
+  "steps": [
+    { "op": "control", "as": "attacker", "deposit_method": "{{deposit}}", "withdraw_method": "{{withdraw}}", "amount_arg": "{{amount_arg}}", "near": "5" },
+    { "op": "deposit", "id": "dep", "as": "attacker", "method": "{{deposit}}", "near": "5" },
+    { "op": "call", "id": "w1", "as": "attacker", "method": "{{withdraw}}", "args": { "{{amount_arg}}": "5000000000000000000000000" }, "guard_deposit": true, "async": true },
+    { "op": "call", "id": "w2", "as": "attacker", "method": "{{withdraw}}", "args": { "{{amount_arg}}": "5000000000000000000000000" }, "guard_deposit": true, "async": true },
+    { "op": "settle" }
+  ],
+  "checks": [
+    { "check": "any_succeeded", "steps": ["w1", "w2"], "message": "Neither withdraw succeeded (`{{withdraw}}`: {error.w1}), so the race was not exercised." },
+    { "check": "net_at_most", "account": "attacker", "near": "0", "message": "Double-spend: attacker.near deposited 5.0000 NEAR, sent two `{{withdraw}}` calls in the same block, and came out {net.attacker} ahead. The balance is checked but not debited before the payout, so both calls pass; the extra came out of other depositors' funds." }
+  ],
+  "explain": {
+    "held": "Two same-block `{{withdraw}}` calls paid out no more than the 5.0000 NEAR deposited. The second call was refused, so nothing was spent twice."
+  }
+}

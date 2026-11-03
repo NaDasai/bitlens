@@ -23,7 +23,7 @@ async function main() {
       const { card, attacks } = await listAttacks(id);
       if (args.includes("--json")) return console.log(JSON.stringify(attacks, null, 2));
       console.log(`${card.summary}\n\nSuggested attacks (${attacks.length}):`);
-      for (const a of attacks) console.log(`  ${a.id.padEnd(32)} ${a.name}\n  ${"".padEnd(32)} checks: ${a.checks}`);
+      for (const a of attacks) console.log(`  ${a.id.padEnd(32)} ${a.name}\n  ${"".padEnd(32)} checks: ${a.description}`);
       return;
     }
     console.error(`Running attacks on ${id} in near-contract-sim (local, no transactions sent anywhere)…`);

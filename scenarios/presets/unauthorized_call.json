@@ -1,0 +1,18 @@
+{
+  "id": "unauth:{{method}}",
+  "name": "{{title}}",
+  "description": "{{summary}}",
+  "steps": [
+    { "op": "call", "id": "attack", "as": "attacker", "method": "{{method}}", "args": "{{args}}", "attack": true }
+  ],
+  "checks": [
+    { "check": "unchanged", "what": "code", "message": "A non-owner call to `{{method}}` replaced {{contract}}'s contract code. Anyone can redeploy it with their own logic and take everything it holds." },
+    { "check": "net_at_most", "account": "attacker", "near": "0", "message": "A non-owner call to `{{method}}` succeeded and moved {net.attacker} into attacker.near's account (the contract's balance changed by {net.contract}). Anyone can call it." },
+    { "check": "unchanged", "what": "keys", "message": "A non-owner call to `{{method}}` succeeded and added access key(s) to {{contract}}. It is not owner-gated." },
+    { "check": "unchanged", "what": "state", "message": "A non-owner call to `{{method}}` succeeded and changed the contract's state. It is not owner-gated." }
+  ],
+  "explain": {
+    "rejected": "A non-owner call to `{{method}}` was rejected: {error.attack}",
+    "held": "A non-owner call to `{{method}}` succeeded but had no effect (no state change, no funds moved): it behaves like a public no-op for this input."
+  }
+}

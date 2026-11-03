@@ -1,0 +1,18 @@
+{
+  "id": "addkey:{{method}}",
+  "name": "Unauthorised key addition via {{method}}",
+  "description": "attacker.near calls `{{method}}` with its own public key; the contract must refuse to add it.",
+  "steps": [
+    { "op": "call", "id": "attack", "as": "attacker", "method": "{{method}}", "args": "{{args}}", "attack": true }
+  ],
+  "checks": [
+    { "check": "unchanged", "what": "keys", "message": "A non-owner call to `{{method}}` added access key(s) to {{contract}}. Whoever holds that key controls the account." },
+    { "check": "unchanged", "what": "code", "message": "A non-owner call to `{{method}}` replaced {{contract}}'s contract code. Anyone can redeploy it with their own logic and take everything it holds." },
+    { "check": "net_at_most", "account": "attacker", "near": "0", "message": "A non-owner call to `{{method}}` succeeded and moved {net.attacker} into attacker.near's account (the contract's balance changed by {net.contract}). Anyone can call it." },
+    { "check": "unchanged", "what": "state", "message": "A non-owner call to `{{method}}` succeeded and changed the contract's state. It is not owner-gated." }
+  ],
+  "explain": {
+    "rejected": "A non-owner call to `{{method}}` was rejected: {error.attack}",
+    "held": "A non-owner call to `{{method}}` succeeded but added no key and had no other effect."
+  }
+}
