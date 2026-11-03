@@ -192,3 +192,15 @@ test("inverted checks (pass when the attack works) → repair round; setup preco
   near.replies.push({ body: chat(JSON.stringify(precondition)) });
   assert.equal((await translateToScenario("drain it", card)).attempts, 1);
 });
+
+test("calls get the standard argument set; the model's own args win", async () => {
+  const card = await scan("vulnerable-vault.xray-demo");
+  const sc = { ...DRAIN, steps: [{ ...DRAIN.steps[0], args: { amount: "5000000000000000000000000" } }] };
+  near.replies.push({ body: chat(JSON.stringify(sc)) });
+  const t = await translateToScenario("drain it", card);
+  const args = (t.scenario.steps[0] as any).args;
+  assert.equal(args.amount, "5000000000000000000000000");
+  assert.equal(args.receiver_id, "attacker.near", "account fields are the signer's");
+  assert.equal(typeof args.code, "string");
+  assert.match(near.seen[0].body.messages[0].content, /standard argument set/);
+});

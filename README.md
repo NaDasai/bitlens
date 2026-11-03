@@ -46,7 +46,7 @@ account id ─view_code RPC─▶ WASM ─▶ ① risk card ─▶ ② attacks i
 ### Steps (each with expected output)
 
 1. `npm install`
-2. `npm test` → `# pass 26`, `# fail 0` (account-id validation, capability detection, RPC errors and the offline fallback against a fake RPC, attack selection, verdict rules, scenario validation, and speech-to-test with its NEAR AI → OpenRouter fallback against two fake LLM servers; no network).
+2. `npm test` → `# pass 27`, `# fail 0` (account-id validation, capability detection, RPC errors and the offline fallback against a fake RPC, attack selection, verdict rules, scenario validation, and speech-to-test with its NEAR AI → OpenRouter fallback against two fake LLM servers; no network).
 3. `npm run build:runner` (the first-build warning above applies) → ends with `Finished \`release\` profile [optimized]`; the binary is `runner/target/release/xray-runner`. You can skip this: the server and MCP server start the same build in the background if the binary is missing.
 4. `npm run test:sim` → `# pass 8`, ~2 s. Pins the status of **every** scenario on all four demo contracts, plus the risk level and verdict, through the real engine. It also runs custom scenario JSON end to end, and checks that the runner rejects malformed scenarios on its own. If it passes, the demo tells the same story.
    By hand: `npm run attack -- vulnerable-vault.xray-demo` → 8 scenarios, `Summary: 6 held, 2 broken, 0 inconclusive`, `VERDICT: DANGEROUS`, exit code 3; `npm run attack -- clean-vault.xray-demo` → `7 held, 0 broken`, `VERDICT: SAFE`, exit code 0.
@@ -157,8 +157,11 @@ The LLM has one job: translate the sentence into a **scenario JSON object** in t
 - **Untrusted output:** what comes back is
   1. checked against the schema (`core/scenario.ts`, zod);
   2. checked so every method it calls is one the contract really exports;
-  3. sent back once with the error if it fails, so the model can fix it (on the provider that answered);
-  4. validated and bounded again by the Rust runner.
+  3. checked for inverted polarity: a check that passes when the attack works (`step_succeeded` on the attack call, a positive `net_at_least` for the attacker) is rejected, so a real exploit can't be reported as HELD;
+  4. sent back once with the error if it fails, so the model can fix it (on the provider that answered);
+  5. validated and bounded again by the Rust runner.
+
+  Argument names can't be read from bytecode, so every translated call gets the same standard argument set as the presets (account fields, `amount`, a tiny valid WASM, the attacker's key); only the args the model sets explicitly (usually `amount`) override it.
 
   A scenario can only sign as the four sim accounts, only call the contract under test, and is size-limited.
 - **Results:** you see the JSON before it runs and can edit it. A run made only of custom scenarios never reports SAFE: one idea tested is not an assessment.
@@ -174,6 +177,18 @@ The LLM has one job: translate the sentence into a **scenario JSON object** in t
 | `LLM_MAX_TOKENS` | `8192` | output cap per request (without one, OpenRouter reserves the model's full output budget and refuses low-credit keys with HTTP 402) |
 
 With neither key set, speech-to-test is off. Everything else works, including hand-written scenario JSON.
+
+**Verified live** (OpenRouter, `deepseek/deepseek-v3.2`, NEAR AI without a key so the chain fell straight through; `npm run attack -- <contract> --say "…" --print-scenario`, time = translation + scan + sim run):
+
+| Contract | Sentence | Result | Attempts | Time |
+|---|---|---|---|---|
+| vulnerable-vault | *the attacker calls admin_drain and keeps the money* | ❌ BROKEN, attacker +67.8015 NEAR | 1 | 11.5 s |
+| vulnerable-vault | *the attacker deposits 5 NEAR and withdraws twice in the same block; it must not get more than it deposited* | ❌ BROKEN, attacker +5.0000 NEAR | 1 | 15.8 s |
+| clean-vault | *a random account tries to make itself the owner* | ✅ HELD (`only the owner can call this`) | 1 | 11.8 s |
+| yield-escrow | *a user requests a payout of 5 NEAR, nobody approves it, and after the timeout the user must get the 5 NEAR back* | ❌ BROKEN, user −5.0000 NEAR stuck | 2 | 37.9 s |
+| risky-vault | *the attacker tries to upgrade the contract with its own code* | ✅ HELD (`only the owner can call this`) | 1 | 23.9 s |
+
+The web flow (type → **Translate to a test** → **Run this scenario**) gave the same ❌ BROKEN +67.8015 NEAR for the first sentence, with a 15 s translation. The previous default (`qwen/qwen3.6-35b-a3b`, a reasoning model) took 20-47 s per translation and, before the polarity rule, wrote the first sentence's checks backwards.
 
 Try it:
 - **Web:** `OPEN_ROUTER_KEY=… npm run server` (and/or `NEAR_AI_API_KEY=…`) → scan `vulnerable-vault` → *Your own attack* → type the attack → **Translate to a test** (or Ctrl/⌘+Enter) → review the JSON → **Run this scenario** → ❌ BROKEN, with the drain's receipt trail.

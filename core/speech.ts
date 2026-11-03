@@ -11,10 +11,12 @@
 import { InputError } from "./errors.js";
 import { chatJson, type ChatMessage } from "./llm.js";
 import type { RiskCard } from "./scan.js";
-import { suggestAttacks } from "./attacks.js";
+import { kitchenSinkArgs, SIM_ACCOUNTS, suggestAttacks } from "./attacks.js";
 import { ScenarioError, scenarioMethods, validateScenario, type Scenario } from "./scenario.js";
 
 const MAX_ATTEMPTS = 2;
+
+const STANDARD_ARG_KEYS = Object.keys(kitchenSinkArgs("x.near")).join(", ");
 
 const LANGUAGE = `
 SCENARIO JSON (one object):
@@ -77,11 +79,35 @@ PATTERNS:
   request as an "async" call, wait_for_yield, advance_past_yield, settle, then a withdraw;
   checks: yielded, completed, net_equals for the requester over ["<request id>","<withdraw id>"].
 
+ARGUMENTS:
+- Argument names cannot be read from bytecode. X-Ray fills every call with its standard argument set:
+  ${STANDARD_ARG_KEYS}
+  (account fields = the signer's account, amount = 1 NEAR, a valid tiny WASM in "code", the attacker's
+  key in "public_key"). Only put the args you need to change in "args", usually just "amount"
+  (e.g. {"amount":"5000000000000000000000000"}), or {} for none.
+- Never invent byte payloads (WASM, keys, hex, base64) and never guess other argument names.
+
 RULES:
 - Output ONLY the JSON object. Use ONLY method names from the contract's list below.
+- In "message" texts, {net.<role>} already ends with "NEAR"; do not write "NEAR" after it.
 - Mark the attacker's call under test with "attack": true.
 - When an EXAMPLE below already tests the sentence's idea, reuse its steps and checks.
 - Keep it minimal: the fewest steps that test the sentence.`;
+
+/**
+ * Fill each call's args with the standard argument set the presets use (the
+ * model cannot know argument names from bytecode); the model's own args win.
+ */
+function withStandardArgs(sc: Scenario): Scenario {
+  const fill = (steps: any[]): any[] =>
+    steps.map((st) => {
+      if (st.op === "sweep") return { ...st, steps: fill(st.steps) };
+      if (st.op !== "call") return st;
+      const who = SIM_ACCOUNTS[st.as as keyof typeof SIM_ACCOUNTS];
+      return { ...st, args: { ...kitchenSinkArgs(who), ...(st.args ?? {}) } };
+    });
+  return validateScenario({ ...sc, steps: fill(sc.steps as any[]) });
+}
 
 function contractFacts(card: RiskCard): string {
   const privileged = card.notable_methods.filter((m) => m.privileged).map((m) => m.name);
@@ -97,12 +123,18 @@ function contractFacts(card: RiskCard): string {
     .join("\n");
 }
 
+function onlyChanged(args: Record<string, unknown>, as: string) {
+  const std: Record<string, unknown> = kitchenSinkArgs(SIM_ACCOUNTS[as as keyof typeof SIM_ACCOUNTS]);
+  return Object.fromEntries(Object.entries(args).filter(([k, v]) => JSON.stringify(std[k]) !== JSON.stringify(v)));
+}
+
 /** Up to three real presets for this contract, as worked examples of the format. */
 function examples(card: RiskCard): string {
   const all = suggestAttacks(card);
   const pick = (["unauthorized_call", "double_withdraw", "yield_timeout"] as const).map((k) => all.find((a) => a.kind === k)).filter(Boolean);
   if (!pick.length) return "";
-  const strip = (s: Scenario) => ({ ...s, steps: s.steps.map((st) => (st.op === "call" && st.args && Object.keys(st.args).length > 6 ? { ...st, args: { receiver_id: "attacker.near", "...": "only the fields the method needs" } } : st)) });
+  // Standard args are filled in automatically, so the examples show only what differs.
+  const strip = (s: Scenario) => ({ ...s, steps: s.steps.map((st) => (st.op === "call" && st.args && Object.keys(st.args).length > 6 ? { ...st, args: onlyChanged(st.args, st.as) } : st)) });
   return "EXAMPLES (built-in presets for this contract):\n" + pick.map((a) => JSON.stringify(strip(a!.scenario))).join("\n");
 }
 
@@ -127,7 +159,7 @@ function finalise(raw: unknown, sentence: string, card: RiskCard): Scenario {
     throw new ScenarioError(
       `Invalid scenario: ${inverted.join("; ")}. Checks must state what a SECURE contract guarantees (all pass = HELD), not that the attack succeeded; e.g. {"check":"net_at_most","account":"attacker","near":"0"}.`,
     );
-  return sc;
+  return withStandardArgs(sc);
 }
 
 /**
