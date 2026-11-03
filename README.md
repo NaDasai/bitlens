@@ -2,7 +2,7 @@
 
 **A security scanner for NEAR smart contracts. It answers "is it safe to connect my wallet to this contract?" from the on-chain bytecode alone, so it works even when no source code was published.**
 
-> Status: work in progress (hackathon build). **Layer 1 (capability scan) works.** Layer 2 (attack simulation in `near-contract-sim`), the web UI and the MCP server are next. This README is updated after each step.
+> Status: work in progress (hackathon build). **Layer 1 (capability scan) and its web UI work.** Layer 2 (attack simulation in `near-contract-sim`), the web UI and the MCP server are next. This README is updated after each step.
 
 ## Problem
 
@@ -53,6 +53,8 @@ Verified expected output (mainnet, Nov 2026):
 4. `npm run scan -- wrap.near token.sweat aurora` → one risk card per account (methods, standards, capabilities with the exact import as evidence, privileged methods, risk level).
 5. `npm run server`, then `curl "http://localhost:8787/scan?account_id=wrap.near"` → the risk card as JSON. `POST /scan` with `{"account_id":"..."}` works too.
 
+6. Web UI: with `npm run server` running, open http://localhost:8787 → paste an account (or click `wrap.near` / `token.sweat` / `aurora`) → **Scan** → risk card with a HIGH / MEDIUM / LOW badge, risk reasons, capabilities and their evidence imports, access keys, standards and privileged methods. Shareable link: `http://localhost:8787/?account=aurora`.
+
 Error cases, each returned with a clear code:
 - `curl "localhost:8787/scan?account_id=Bad..Id"` → HTTP 400 `INVALID_ACCOUNT_ID`
 - `account_id=xray-no-such-account-4242.near` → HTTP 404 `UNKNOWN_ACCOUNT`
@@ -72,7 +74,7 @@ core/      shared engine (scan, RPC, capability rules). No transport code.
 server/    HTTP backend: thin wrapper over core/
 cli/       CLI: thin wrapper over core/
 mcp/       MCP server (stdio), coming next
-web/       web UI, coming next
+web/       web UI (static HTML/JS, served by server/)
 runner/    Rust attack runner over near-contract-sim, coming next
 contracts/ demo contracts (clean / risky / vulnerable), coming next
 ```
