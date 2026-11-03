@@ -1,6 +1,6 @@
 /**
  * Minimal NEAR JSON-RPC client. Read-only: only `query` view requests are
- * ever sent. NEAR X-Ray never signs or submits transactions to any network.
+ * ever sent. BitLens never signs or submits transactions to any network.
  */
 import { EnvHttpProxyAgent, fetch as undiciFetch } from "undici";
 import { assertAccountId } from "./accountId.js";
@@ -74,7 +74,7 @@ async function rpcQuery<T>(params: Record<string, unknown>, opts?: RpcOptions): 
       const res = await httpFetch(rpcUrl, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ jsonrpc: "2.0", id: "near-xray", method: "query", params }),
+        body: JSON.stringify({ jsonrpc: "2.0", id: "bitlens", method: "query", params }),
         signal: AbortSignal.timeout(opts?.timeoutMs ?? 15_000),
       });
       body = (await res.json().catch(() => undefined)) as any;

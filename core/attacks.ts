@@ -207,7 +207,7 @@ function initCandidates(card: RiskCard) {
 }
 
 async function wasmFile(wasm: Uint8Array): Promise<string> {
-  const dir = join(tmpdir(), "near-xray");
+  const dir = join(tmpdir(), "bitlens");
   await mkdir(dir, { recursive: true });
   const file = join(dir, createHash("sha256").update(wasm).digest("hex").slice(0, 16) + ".wasm");
   await writeFile(file, wasm);
@@ -304,7 +304,7 @@ export async function runAttacks(
 
 /** The throwaway warm-up spec: one attack on the bundled clean vault. */
 export async function warmupSpec() {
-  const id = "clean-vault.xray-demo";
+  const id = "clean-vault.bitlens-demo";
   const wasm = await readDemoWasm(id);
   const { card } = await scanWithCode(id);
   const one = suggestAttacks(card).filter((a) => a.id === "unauth:set_owner");

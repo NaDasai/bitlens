@@ -80,13 +80,13 @@ PATTERNS:
   checks: yielded, completed, net_equals for the requester over ["<request id>","<withdraw id>"].
 
 ARGUMENTS:
-- Argument names cannot be read from bytecode. X-Ray fills every call with its standard argument set:
+- Argument names cannot be read from bytecode. BitLens fills every call with its standard argument set:
   ${STANDARD_ARG_KEYS}
   (account fields = the signer's account, amount = 1 NEAR, a valid tiny WASM in "code", the attacker's
   key in "public_key"). Only put the args you need to change in "args", usually just "amount"
   (e.g. {"amount":"5000000000000000000000000"}), or {} for none.
 - Never invent byte payloads (WASM, keys, hex, base64): "code" and "public_key" are always replaced by
-  X-Ray's own valid values. Never guess other argument names.
+  BitLens's own valid values. Never guess other argument names.
 
 RULES:
 - Output ONLY the JSON object. Use ONLY method names from the contract's list below.
@@ -98,7 +98,7 @@ RULES:
 /**
  * Fill each call's args with the standard argument set the presets use (the
  * model cannot know argument names from bytecode); the model's own args win,
- * except the byte payloads "code" and "public_key", which are always X-Ray's.
+ * except the byte payloads "code" and "public_key", which are always BitLens's.
  */
 function withStandardArgs(sc: Scenario): Scenario {
   const fill = (steps: any[]): any[] =>
@@ -107,7 +107,7 @@ function withStandardArgs(sc: Scenario): Scenario {
       if (st.op !== "call") return st;
       const who = SIM_ACCOUNTS[st.as as keyof typeof SIM_ACCOUNTS];
       const std = kitchenSinkArgs(who);
-      // Byte payloads always come from X-Ray (a valid tiny WASM, the attacker's key): a model can't produce valid ones.
+      // Byte payloads always come from BitLens (a valid tiny WASM, the attacker's key): a model can't produce valid ones.
       return { ...st, args: { ...std, ...(st.args ?? {}), code: std.code, public_key: std.public_key } };
     });
   return validateScenario({ ...sc, steps: fill(sc.steps as any[]) });
@@ -208,7 +208,7 @@ export async function translateToScenario(sentence: unknown, card: RiskCard): Pr
   const messages: ChatMessage[] = [
     {
       role: "system",
-      content: `You translate a security tester's plain-English attack idea into a test scenario for NEAR X-Ray, which runs it against a NEAR smart contract in a local simulator. You output JSON only, never code.\n${LANGUAGE}\n\n${contractFacts(card)}\n\n${examples(card)}`,
+      content: `You translate a security tester's plain-English attack idea into a test scenario for BitLens, which runs it against a NEAR smart contract in a local simulator. You output JSON only, never code.\n${LANGUAGE}\n\n${contractFacts(card)}\n\n${examples(card)}`,
     },
     { role: "user", content: text },
   ];

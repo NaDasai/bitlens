@@ -501,7 +501,7 @@ fn exec(sim: &mut Sim, rec: &mut Recorder, steps: &[Step], env: &mut Env) -> Res
                 env.guard = control(sim, role(*signer), env.c, deposit_method, withdraw_method, amount_arg, d).map_err(|e| {
                     (
                         Status::Inconclusive,
-                        format!("Control run failed: a plain `{deposit_method}` of {} NEAR followed by a normal `{withdraw_method}` did not work in the sim ({e}). X-Ray could not drive this contract's deposit/withdraw flow from bytecode alone, so this scenario was not judged.", fmt_near(d)),
+                        format!("Control run failed: a plain `{deposit_method}` of {} NEAR followed by a normal `{withdraw_method}` did not work in the sim ({e}). BitLens could not drive this contract's deposit/withdraw flow from bytecode alone, so this scenario was not judged.", fmt_near(d)),
                     )
                 })?;
                 env.vars.insert("guard".into(), env.guard.to_string());

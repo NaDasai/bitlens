@@ -1,4 +1,4 @@
-//! CLEAN vault: a correct native-NEAR vault. Every NEAR X-Ray attack should be HELD.
+//! CLEAN vault: a correct native-NEAR vault. Every BitLens attack should be HELD.
 //!
 //! - `deposit()` (payable) credits the caller.
 //! - `withdraw(amount)` **debits first**, then transfers, then `on_withdraw`

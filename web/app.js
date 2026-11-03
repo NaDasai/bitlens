@@ -1,4 +1,4 @@
-// NEAR X-Ray web UI: address → /scan → risk card.
+// BitLens web UI: address → /scan → risk card.
 // Everything from the contract (method names etc.) is untrusted, so the DOM is
 // built with textContent only. No innerHTML anywhere.
 
@@ -52,7 +52,7 @@ async function runScan(accountId) {
     current = body.account_id;
     loadAttacks(body.account_id);
   } catch (e) {
-    setStatus(`Could not reach the X-Ray backend: ${e.message}`, true);
+    setStatus(`Could not reach the BitLens backend: ${e.message}`, true);
   } finally {
     btn.disabled = false;
   }

@@ -13,12 +13,12 @@ const built = existsSync(RUNNER_BIN);
 const H = "held", B = "broken";
 
 const EXPECTED: Record<string, { risk: string; verdict: string; results: Record<string, string> }> = {
-  "clean-vault.xray-demo": {
+  "clean-vault.bitlens-demo": {
     risk: "low",
     verdict: "safe",
     results: { "unauth:on_withdraw": H, "unauth:set_owner": H, "unauth:set_paused": H, "unauth:withdraw": H, double_withdraw: H, failed_transfer_refund: H, callback_gas: H },
   },
-  "risky-vault.xray-demo": {
+  "risky-vault.bitlens-demo": {
     risk: "high",
     verdict: "caution",
     results: {
@@ -26,7 +26,7 @@ const EXPECTED: Record<string, { risk: string; verdict: string; results: Record<
       "unauth:withdraw": H, double_withdraw: H, failed_transfer_refund: H, callback_gas: H,
     },
   },
-  "vulnerable-vault.xray-demo": {
+  "vulnerable-vault.bitlens-demo": {
     risk: "high",
     verdict: "dangerous",
     results: {
@@ -34,7 +34,7 @@ const EXPECTED: Record<string, { risk: string; verdict: string; results: Record<
       double_withdraw: B, failed_transfer_refund: H, callback_gas: H,
     },
   },
-  "yield-escrow.xray-demo": {
+  "yield-escrow.bitlens-demo": {
     risk: "low",
     verdict: "dangerous",
     results: {
@@ -59,10 +59,10 @@ for (const [id, want] of Object.entries(EXPECTED)) {
 }
 
 test("vulnerable admin_drain: the NEAR really moves to the attacker", { skip: !built && "runner not built" }, async () => {
-  const { report } = await runAttacks("vulnerable-vault.xray-demo", ["unauth:admin_drain"]);
+  const { report } = await runAttacks("vulnerable-vault.bitlens-demo", ["unauth:admin_drain"]);
   const d = report.results[0].token_deltas;
   assert.ok(BigInt(d["attacker.near"].yocto) > 60n * 10n ** 24n, "attacker gains > 60 NEAR");
-  assert.equal(BigInt(d["attacker.near"].yocto), -BigInt(d["vulnerable-vault.xray-demo"].yocto));
+  assert.equal(BigInt(d["attacker.near"].yocto), -BigInt(d["vulnerable-vault.bitlens-demo"].yocto));
 });
 
 // --- custom scenario JSON (what speech-to-test produces) through the real runner ---
@@ -76,7 +76,7 @@ const DRAIN = {
 };
 
 test("custom JSON: anyone can drain the vulnerable vault → BROKEN with the money trail", { skip: !built && "runner not built" }, async () => {
-  const { report } = await runAttacks("vulnerable-vault.xray-demo", undefined, { custom: [DRAIN] });
+  const { report } = await runAttacks("vulnerable-vault.bitlens-demo", undefined, { custom: [DRAIN] });
   assert.equal(report.results.length, 1, "custom scenarios replace the presets when no ids are given");
   const r = report.results[0];
   assert.equal(r.status, "broken");
@@ -95,7 +95,7 @@ test("custom JSON: attacker tries to take over the clean vault → HELD (rejecte
     checks: [{ check: "unchanged", what: "state" }],
     explain: { rejected: "Both admin calls were refused: {error.own}" },
   };
-  const { report } = await runAttacks("clean-vault.xray-demo", undefined, { custom: [takeover] });
+  const { report } = await runAttacks("clean-vault.bitlens-demo", undefined, { custom: [takeover] });
   assert.equal(report.results[0].status, "held");
   assert.equal(report.results[0].explanation, "Both admin calls were refused: panicked: only the owner can call this");
 });
@@ -104,7 +104,7 @@ test("runner re-validates: a malformed scenario becomes an error result, the oth
   const { runSpec } = await import("./engine.js");
   const { buildSpec, suggestAttacks } = await import("./attacks.js");
   const { scanWithCode } = await import("./scan.js");
-  const { card } = await scanWithCode("vulnerable-vault.xray-demo");
+  const { card } = await scanWithCode("vulnerable-vault.bitlens-demo");
   const spec: any = buildSpec(card, "contracts/res/vulnerable_vault.wasm", suggestAttacks(card).slice(0, 1));
   spec.scenarios.push({ id: "x", name: "x", steps: [{ op: "call", as: "mallory.near", method: "admin_drain" }] });
   spec.scenarios.push({ id: "y", name: "y", steps: [{ op: "advance_blocks", blocks: 999999 }] });

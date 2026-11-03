@@ -9,7 +9,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
-const target = process.argv.slice(2).find((a) => !a.startsWith("--")) ?? "vulnerable-vault.xray-demo";
+const target = process.argv.slice(2).find((a) => !a.startsWith("--")) ?? "vulnerable-vault.bitlens-demo";
 const wait = process.argv.includes("--wait");
 
 const transport = new StdioClientTransport({
@@ -17,7 +17,7 @@ const transport = new StdioClientTransport({
   args: [`${root}mcp/server.ts`],
   stderr: "inherit",
 });
-const client = new Client({ name: "xray-smoke", version: "0.0.0" });
+const client = new Client({ name: "bitlens-smoke", version: "0.0.0" });
 await client.connect(transport);
 
 const text = (r: any) => r.content?.[0]?.text ?? "";

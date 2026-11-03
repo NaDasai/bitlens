@@ -1,6 +1,6 @@
 /**
  * CLI: run attack scenarios in near-contract-sim.
- *   npm run attack -- vulnerable-vault.xray-demo
+ *   npm run attack -- vulnerable-vault.bitlens-demo
  *   npm run attack -- <account> --list             # suggested scenarios only
  *   npm run attack -- <account> --only unauth:admin_drain,double_withdraw
  *   npm run attack -- <account> --scenario my-attack.json    # run your own scenario JSON
@@ -45,7 +45,7 @@ async function main() {
     console.error(`Running ${custom ? "the custom scenario" : "attacks"} on ${id} in near-contract-sim (local, no transactions sent anywhere)…`);
     const { card, report } = await runAttacks(id, only, { custom });
     if (args.includes("--json")) return console.log(JSON.stringify({ card, report, ...verdictOf(card, report) }, null, 2));
-    console.log(`\n=== NEAR X-Ray attack report: ${report.account_id} ===`);
+    console.log(`\n=== BitLens attack report: ${report.account_id} ===`);
     console.log(`init: ${report.init.ok ? `${report.init.method} (by ${report.init.signer})` : "not initialised (no init call succeeded)"}`);
     for (const r of report.results) {
       console.log(`\n${ICON[r.status]}  ${r.name}  [${r.id}]`);

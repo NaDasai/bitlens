@@ -1,5 +1,5 @@
 /**
- * MCP front door (stdio): NEAR X-Ray as a tool for AI agents.
+ * MCP front door (stdio): BitLens as a tool for AI agents.
  * A thin wrapper over core/: no scan/attack logic here.
  *
  * Tools: scan_contract, list_attacks, run_attacks, assess_contract, run_custom_attack.
@@ -29,14 +29,14 @@ import {
   type RiskCard,
 } from "../core/index.js";
 
-const log = (m: string) => process.stderr.write(`[near-xray] ${m}\n`);
+const log = (m: string) => process.stderr.write(`[bitlens] ${m}\n`);
 
 const accountId = z
   .string()
   .min(2)
   .max(64)
   .describe(
-    'NEAR account id of the contract, e.g. "wrap.near" (mainnet). Built-in demo contracts: "clean-vault.xray-demo", "risky-vault.xray-demo", "vulnerable-vault.xray-demo".',
+    'NEAR account id of the contract, e.g. "wrap.near" (mainnet). Built-in demo contracts: "clean-vault.bitlens-demo", "risky-vault.bitlens-demo", "vulnerable-vault.bitlens-demo".',
   );
 
 type ToolResult = { content: { type: "text"; text: string }[]; structuredContent?: Record<string, unknown>; isError?: boolean };
@@ -107,7 +107,7 @@ function engineNotReady(): EngineNotReadyError {
   );
 }
 
-const server = new McpServer({ name: "near-xray", version: "0.1.0" });
+const server = new McpServer({ name: "bitlens", version: "0.1.0" });
 
 server.registerTool(
   "scan_contract",
@@ -133,7 +133,7 @@ server.registerTool(
   {
     title: "List attack scenarios for a NEAR contract",
     description:
-      "List the attack scenarios NEAR X-Ray would run against this contract, derived from its capabilities: unauthorised admin calls, unauthorised key addition, double-spend before a callback resolves, failed-transfer refund, callback out-of-gas, stale yield timeout. Each has an id to pass to run_attacks. With include_scenarios, also returns each one's scenario JSON (the format run_custom_attack accepts). Read-only, instant.",
+      "List the attack scenarios BitLens would run against this contract, derived from its capabilities: unauthorised admin calls, unauthorised key addition, double-spend before a callback resolves, failed-transfer refund, callback out-of-gas, stale yield timeout. Each has an id to pass to run_attacks. With include_scenarios, also returns each one's scenario JSON (the format run_custom_attack accepts). Read-only, instant.",
     inputSchema: {
       account_id: accountId,
       include_scenarios: z.boolean().optional().describe("Also return the scenario JSON of each attack (useful as examples for run_custom_attack)."),

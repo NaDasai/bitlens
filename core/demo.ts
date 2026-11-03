@@ -6,19 +6,19 @@
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
-export const DEMO_SUFFIX = ".xray-demo";
+export const DEMO_SUFFIX = ".bitlens-demo";
 
 export const DEMO_CONTRACTS: Record<string, { file: string; description: string }> = {
-  "clean-vault.xray-demo": { file: "clean_vault.wasm", description: "Correct native-NEAR vault. Every attack should be HELD." },
-  "risky-vault.xray-demo": {
+  "clean-vault.bitlens-demo": { file: "clean_vault.wasm", description: "Correct native-NEAR vault. Every attack should be HELD." },
+  "risky-vault.bitlens-demo": {
     file: "risky_vault.wasm",
     description: "Vault with owner-gated upgrade + add_full_access_key. Red capabilities, attacks HELD.",
   },
-  "vulnerable-vault.xray-demo": {
+  "vulnerable-vault.bitlens-demo": {
     file: "vulnerable_vault.wasm",
     description: "Planted bugs: admin_drain has no owner check; withdraw debits only in its callback (double-spend).",
   },
-  "yield-escrow.xray-demo": {
+  "yield-escrow.bitlens-demo": {
     file: "yield_escrow.wasm",
     description: "Payouts wait for an approver via yield/resume. Planted bug: a timed-out request is never re-credited (stuck NEAR). Scan says LOW; only the attack finds it.",
   },

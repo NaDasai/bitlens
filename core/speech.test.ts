@@ -61,13 +61,13 @@ test("no key at all → LLM_NOT_CONFIGURED (503), nothing sent", async () => {
   delete process.env.NEAR_AI_API_KEY;
   delete process.env.OPEN_ROUTER_KEY;
   assert.equal(llmStatus().configured, false);
-  const card = await scan("vulnerable-vault.xray-demo");
+  const card = await scan("vulnerable-vault.bitlens-demo");
   await assert.rejects(translateToScenario("attacker drains it", card), (e: any) => e instanceof UpstreamError && e.code === "LLM_NOT_CONFIGURED" && e.status === 503);
   assert.equal(near.seen.length + router.seen.length, 0);
 });
 
 test("NEAR AI first: chat/completions in JSON mode → validated scenario; OpenRouter untouched", async () => {
-  const card = await scan("vulnerable-vault.xray-demo");
+  const card = await scan("vulnerable-vault.bitlens-demo");
   near.replies.push(GOOD);
   const t = await translateToScenario("  The attacker calls admin_drain and keeps the money  ", card);
   assert.equal(router.seen.length, 0);
@@ -86,7 +86,7 @@ test("NEAR AI first: chat/completions in JSON mode → validated scenario; OpenR
 });
 
 test("NEAR AI key rejected (401) → OpenRouter answers; NEAR AI then skipped while cooling down", async () => {
-  const card = await scan("vulnerable-vault.xray-demo");
+  const card = await scan("vulnerable-vault.bitlens-demo");
   near.replies.push({ status: 401, body: { error: { message: "invalid api key" } } });
   router.replies.push(GOOD);
   const t = await translateToScenario("drain it", card);
@@ -95,7 +95,7 @@ test("NEAR AI key rejected (401) → OpenRouter answers; NEAR AI then skipped wh
   assert.deepEqual(t.fallback_from, ["NEAR AI Cloud: HTTP 401: invalid api key"]);
   const [req] = router.seen;
   assert.equal(req.headers.authorization, "Bearer router-key");
-  assert.equal(req.headers["x-title"], "NEAR X-Ray");
+  assert.equal(req.headers["x-title"], "BitLens");
   assert.equal(req.body.model, DEFAULT_OPEN_ROUTER_MODEL);
   assert.deepEqual(req.body.response_format, { type: "json_object" });
 
@@ -107,7 +107,7 @@ test("NEAR AI key rejected (401) → OpenRouter answers; NEAR AI then skipped wh
 });
 
 test("NEAR AI unreachable or erroring → OpenRouter", async () => {
-  const card = await scan("vulnerable-vault.xray-demo");
+  const card = await scan("vulnerable-vault.bitlens-demo");
   process.env.NEAR_AI_BASE_URL = "http://127.0.0.1:1/v1";
   router.replies.push(GOOD);
   const t = await translateToScenario("drain it", card);
@@ -123,7 +123,7 @@ test("NEAR AI unreachable or erroring → OpenRouter", async () => {
 
 test("no NEAR AI key → straight to OpenRouter (not counted as a fallback)", async () => {
   delete process.env.NEAR_AI_API_KEY;
-  const card = await scan("vulnerable-vault.xray-demo");
+  const card = await scan("vulnerable-vault.bitlens-demo");
   router.replies.push(GOOD);
   const t = await translateToScenario("drain it", card);
   assert.equal(t.provider, "OpenRouter");
@@ -132,7 +132,7 @@ test("no NEAR AI key → straight to OpenRouter (not counted as a fallback)", as
 });
 
 test("both fail → one error naming both, keys never echoed", async () => {
-  const card = await scan("vulnerable-vault.xray-demo");
+  const card = await scan("vulnerable-vault.bitlens-demo");
   near.replies.push({ status: 401, body: { error: { message: "bad key" } } });
   router.replies.push({ status: 402, body: { error: { message: "insufficient credits" } } });
   await assert.rejects(translateToScenario("drain it", card), (e: any) => {
@@ -145,7 +145,7 @@ test("both fail → one error naming both, keys never echoed", async () => {
 
 test("model env overrides; fenced JSON tolerated", async () => {
   process.env.NEAR_AI_MODEL = "z-ai/glm-5.3-flash";
-  const card = await scan("vulnerable-vault.xray-demo");
+  const card = await scan("vulnerable-vault.bitlens-demo");
   near.replies.push({ body: chat("```json\n" + JSON.stringify(DRAIN) + "\n```") });
   const t = await translateToScenario("drain it", card);
   assert.equal(near.seen[0].body.model, "z-ai/glm-5.3-flash");
@@ -153,7 +153,7 @@ test("model env overrides; fenced JSON tolerated", async () => {
 });
 
 test("invented method → one repair round, on the provider that answered", async () => {
-  const card = await scan("vulnerable-vault.xray-demo");
+  const card = await scan("vulnerable-vault.bitlens-demo");
   const bad = { ...DRAIN, steps: [{ ...DRAIN.steps[0], method: "steal_everything" }] };
   near.replies.push({ status: 500, body: { error: { message: "boom" } } });
   router.replies.push({ body: chat(JSON.stringify(bad)) }, GOOD);
@@ -165,14 +165,14 @@ test("invented method → one repair round, on the provider that answered", asyn
 });
 
 test("still invalid after the repair round → SCENARIO_INVALID; unsafe shapes never pass", async () => {
-  const card = await scan("vulnerable-vault.xray-demo");
+  const card = await scan("vulnerable-vault.bitlens-demo");
   const evil = { ...DRAIN, steps: [{ op: "call", as: "alice.near", method: "admin_drain" }] };
   near.replies.push({ body: chat(JSON.stringify(evil)) }, { body: chat("not json at all") });
   await assert.rejects(translateToScenario("drain it", card), (e: any) => e instanceof ScenarioError && e.code === "SCENARIO_INVALID");
 });
 
 test("inverted checks (pass when the attack works) → repair round; setup preconditions allowed", async () => {
-  const card = await scan("vulnerable-vault.xray-demo");
+  const card = await scan("vulnerable-vault.bitlens-demo");
   const inverted = {
     ...DRAIN,
     checks: [
@@ -194,14 +194,14 @@ test("inverted checks (pass when the attack works) → repair round; setup preco
 });
 
 test("calls get the standard argument set; the model's own args win", async () => {
-  const card = await scan("vulnerable-vault.xray-demo");
+  const card = await scan("vulnerable-vault.bitlens-demo");
   const sc = { ...DRAIN, steps: [{ ...DRAIN.steps[0], args: { amount: "5000000000000000000000000", public_key: "ed25519:invented", code: "bm90IHdhc20=" } }] };
   near.replies.push({ body: chat(JSON.stringify(sc)) });
   const t = await translateToScenario("drain it", card);
   const args = (t.scenario.steps[0] as any).args;
   assert.equal(args.amount, "5000000000000000000000000");
   assert.equal(args.receiver_id, "attacker.near", "account fields are the signer's");
-  assert.notEqual(args.code, "bm90IHdhc20=", "byte payloads are always X-Ray's own");
+  assert.notEqual(args.code, "bm90IHdhc20=", "byte payloads are always BitLens's own");
   assert.notEqual(args.public_key, "ed25519:invented");
   assert.match(args.public_key, /^ed25519:/);
   assert.match(near.seen[0].body.messages[0].content, /standard argument set/);

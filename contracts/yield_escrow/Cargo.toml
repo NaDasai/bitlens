@@ -8,7 +8,7 @@ publish = false
 crate-type = ["cdylib", "rlib"]
 
 [features]
-# The bug-free build, used only to check that X-Ray reports HELD on the fixed contract.
+# The bug-free build, used only to check that BitLens reports HELD on the fixed contract.
 fixed = []
 
 [dependencies]
