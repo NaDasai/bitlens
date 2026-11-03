@@ -1,0 +1,25 @@
+{
+  "name": "near-xray",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Security scanner for NEAR smart contracts: bytecode capability scan + attack simulation in a local NEAR runtime. Web UI + MCP server over one shared core.",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "scan": "tsx cli/scan.ts",
+    "server": "tsx server/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test core/*.test.ts"
+  },
+  "dependencies": {
+    "near-contract-parser": "1.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}
