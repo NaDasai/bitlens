@@ -33,3 +33,15 @@ test("verdict: broken → dangerous; all held + LOW → safe; HIGH → caution",
   assert.equal(verdictOf(clean, null).verdict, "caution"); // attacks not run: never "safe"
   assert.equal(verdictOf(await scan("risky-vault.xray-demo"), rep(["held"])).verdict, "caution");
 });
+
+test("a custom-only run never yields SAFE", () => {
+  const rep = (status: string, id: string): any => ({
+    account_id: "x", code_hash: "x", engine: "sim", init: { ok: true, tried: [] }, victim_deposit: null, accounts: {},
+    results: [{ id, name: id, status, explanation: "", event_sequence: [], token_deltas: {}, findings: [], trace: "", duration_ms: 0 }],
+    summary: {}, duration_ms: 0,
+  });
+  const low: any = { risk: { level: "low", reasons: [] } };
+  assert.equal(verdictOf(low, rep("held", "custom:x")).verdict, "caution");
+  assert.equal(verdictOf(low, rep("broken", "custom:x")).verdict, "dangerous");
+  assert.equal(verdictOf(low, rep("held", "unauth:x")).verdict, "safe");
+});

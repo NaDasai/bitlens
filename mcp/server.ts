@@ -2,7 +2,7 @@
  * MCP front door (stdio): NEAR X-Ray as a tool for AI agents.
  * A thin wrapper over core/: no scan/attack logic here.
  *
- * Tools: scan_contract, list_attacks, run_attacks, assess_contract.
+ * Tools: scan_contract, list_attacks, run_attacks, assess_contract, run_custom_attack.
  * All are read-only with respect to every real network: scans make RPC view
  * queries; attacks run in a local near-contract-sim and never sign or send a
  * transaction anywhere. stdout is the MCP channel, so all logging goes to stderr.
@@ -19,6 +19,8 @@ import {
   scan,
   startWarmup,
   toErrorPayload,
+  translateToScenario,
+  InputError,
   verdictOf,
   warmReady,
   warmupSpec,
@@ -131,14 +133,20 @@ server.registerTool(
   {
     title: "List attack scenarios for a NEAR contract",
     description:
-      "List the attack scenarios NEAR X-Ray would run against this contract, derived from its capabilities: unauthorised admin calls, unauthorised key addition, double-spend before a callback resolves, failed-transfer refund, callback out-of-gas, stale yield timeout. Each has an id to pass to run_attacks. Read-only, instant.",
-    inputSchema: { account_id: accountId },
+      "List the attack scenarios NEAR X-Ray would run against this contract, derived from its capabilities: unauthorised admin calls, unauthorised key addition, double-spend before a callback resolves, failed-transfer refund, callback out-of-gas, stale yield timeout. Each has an id to pass to run_attacks. With include_scenarios, also returns each one's scenario JSON (the format run_custom_attack accepts). Read-only, instant.",
+    inputSchema: {
+      account_id: accountId,
+      include_scenarios: z.boolean().optional().describe("Also return the scenario JSON of each attack (useful as examples for run_custom_attack)."),
+    },
     annotations: { readOnlyHint: true, openWorldHint: true },
   },
-  async ({ account_id }) => {
+  async ({ account_id, include_scenarios }) => {
     try {
       const { card, attacks } = await listAttacks(assertAccountId(account_id));
-      const data = { account_id: card.account_id, attacks: attacks.map((a) => ({ id: a.id, name: a.name, kind: a.kind, checks: a.checks })) };
+      const data = {
+        account_id: card.account_id,
+        attacks: attacks.map((a) => ({ id: a.id, name: a.name, kind: a.kind, checks: a.description, ...(include_scenarios ? { scenario: a.scenario } : {}) })),
+      };
       return ok(`${attacks.length} attack scenario(s) apply to ${card.account_id}.`, data);
     } catch (e) {
       return fail(e);
@@ -210,9 +218,53 @@ server.registerTool(
   },
 );
 
+server.registerTool(
+  "run_custom_attack",
+  {
+    title: "Test your own attack idea against a NEAR contract",
+    description:
+      "Turn an attack idea into a test and run it on the contract's real bytecode in the LOCAL simulator. Give EITHER `description` (plain English, e.g. \"the attacker calls admin_drain and keeps the money\"; an LLM translates it into scenario JSON: NEAR AI Cloud, falling back to OpenRouter; the server needs NEAR_AI_API_KEY or OPEN_ROUTER_KEY) OR `scenario` (scenario JSON you wrote yourself). " +
+      'Scenario JSON: {"id","name","steps":[...],"checks":[...]}. Steps ("op"): call {as: owner|victim|attacker|user, method, args, deposit_near, async, attack:true for the call under test}, deposit {as, method, near}, settle, advance_blocks {blocks}, wait_for_yield, advance_past_yield, sweep. ' +
+      'Checks ("check"), first failure decides: net_at_most|net_at_least|net_equals {account: role|contract, near}, unchanged {what: code|keys|state}, step_succeeded|step_failed {step}. ' +
+      "Call list_attacks with include_scenarios for complete examples. Returns the scenario that ran and its result (held / broken / inconclusive). dry_run: only translate. Never sends transactions to any network.",
+    inputSchema: {
+      account_id: accountId,
+      description: z.string().min(3).max(1000).optional().describe("The attack idea in plain English."),
+      scenario: z.record(z.string(), z.unknown()).optional().describe("Scenario JSON to run as-is (validated)."),
+      dry_run: z.boolean().optional().describe("Only translate the description to scenario JSON; do not run it."),
+    },
+    annotations: { readOnlyHint: true, openWorldHint: true },
+  },
+  async ({ account_id, description, scenario, dry_run }) => {
+    try {
+      const id = assertAccountId(account_id);
+      if (Boolean(description) === Boolean(scenario)) throw new InputError("Give exactly one of `description` (plain English) or `scenario` (scenario JSON).");
+      let sc: unknown = scenario;
+      let translatedBy: string | undefined;
+      if (description) {
+        const t = await translateToScenario(description, await scan(id));
+        sc = t.scenario;
+        translatedBy = `${t.provider} (${t.model})`;
+      }
+      if (dry_run) return ok(`Scenario for ${id}${translatedBy ? ` (translated by ${translatedBy})` : ""}; not run.`, { account_id: id, scenario: sc as Record<string, unknown>, translated_by: translatedBy ?? null });
+      if (!warmReady()) throw engineNotReady();
+      const { report } = await runAttacks(id, undefined, { custom: [sc] });
+      const r = report.results[0];
+      return ok(`${id}: ${r.status.toUpperCase()}: ${r.explanation}`, {
+        account_id: id,
+        translated_by: translatedBy ?? null,
+        scenario: sc as Record<string, unknown>,
+        result: resultForAgent(r),
+      });
+    } catch (e) {
+      return fail(e);
+    }
+  },
+);
+
 async function main() {
   await server.connect(new StdioServerTransport());
-  log("MCP server ready on stdio (tools: scan_contract, list_attacks, run_attacks, assess_contract)");
+  log("MCP server ready on stdio (tools: scan_contract, list_attacks, run_attacks, assess_contract, run_custom_attack)");
   void startWarmup(log, warmupSpec); // background, never awaited
 }
 

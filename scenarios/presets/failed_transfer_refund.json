@@ -1,0 +1,23 @@
+{
+  "id": "failed_transfer_refund",
+  "name": "Failed-transfer refund in {{withdraw}}",
+  "description": "Make the payout transfer of `{{withdraw}}` fail; the user's balance must be restored, nothing lost or stuck.",
+  "steps": [
+    { "op": "control", "as": "user", "deposit_method": "{{deposit}}", "withdraw_method": "{{withdraw}}", "amount_arg": "{{amount_arg}}", "near": "5" },
+    { "op": "deposit", "id": "dep", "as": "user", "method": "{{deposit}}", "near": "5" },
+    { "op": "call", "id": "w1", "as": "user", "method": "{{withdraw}}", "args": { "{{amount_arg}}": "5000000000000000000000000" }, "guard_deposit": true, "async": true, "hold_transfer_blocks": 4 },
+    { "op": "wait_for_receipt", "step": "w1", "method": "{{withdraw}}" },
+    { "op": "delete_account", "account": "user", "beneficiary": "owner" },
+    { "op": "settle" },
+    { "op": "create_account", "account": "user", "near": "5" },
+    { "op": "call", "id": "w2", "as": "user", "method": "{{withdraw}}", "args": { "{{amount_arg}}": "5000000000000000000000000" }, "guard_deposit": true }
+  ],
+  "checks": [
+    { "check": "transfer_failed", "step": "w1", "message": "Could not make the payout transfer fail (`{{withdraw}}` may not pay out with a plain transfer)." },
+    { "check": "callback_after_transfer", "step": "w1", "message": "`{{withdraw}}` pays out with a plain transfer and no callback, so there is no failure branch to test. The only way to make that transfer fail is the recipient deleting its own account mid-flight, which is self-inflicted, so it is not counted against the contract." },
+    { "check": "net_equals", "account": "user", "near": "5", "steps": ["w2"], "message": "The payout failed but the balance was not restored: a later `{{withdraw}}` of the same 5.0000 NEAR {status.w2} ({error.w2}). The failed-transfer branch loses user funds (the NEAR is stuck in the contract)." }
+  ],
+  "explain": {
+    "held": "The payout failed, the contract restored the 5.0000 NEAR balance, and the user withdrew it in full afterwards. Nothing was lost."
+  }
+}

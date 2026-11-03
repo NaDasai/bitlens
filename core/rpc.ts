@@ -11,7 +11,8 @@ const PROXY_SET = Boolean(
   process.env.HTTPS_PROXY || process.env.https_proxy || process.env.HTTP_PROXY || process.env.http_proxy,
 );
 const proxyAgent = PROXY_SET ? new EnvHttpProxyAgent() : undefined;
-const httpFetch = (url: string, init: Parameters<typeof undiciFetch>[1]) =>
+/** fetch that honours HTTPS_PROXY / NO_PROXY (Node's built-in fetch ignores them). */
+export const httpFetch = (url: string, init: Parameters<typeof undiciFetch>[1]) =>
   proxyAgent ? undiciFetch(url, { ...init, dispatcher: proxyAgent }) : undiciFetch(url, init);
 
 export const DEFAULT_RPC_URLS = [

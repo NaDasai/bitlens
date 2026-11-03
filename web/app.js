@@ -221,8 +221,14 @@ async function loadAttacks(accountId) {
     h("div", { class: "who" }, h("h2", { class: "plain" }, "Attack proof"), h("div", { class: "meta" }, "Runs the real bytecode in near-contract-sim (local nearcore runtime). Nothing is sent to any network.")),
     enginePill(st),
   );
+  const ai = await llmState();
+  if (accountId !== current) return;
   if (!list.length) {
-    attacksEl.replaceChildren(head, h("div", { class: "block note" }, "No attack templates apply to this contract (no privileged-looking methods, no withdraw flow, no yields)."));
+    attacksEl.replaceChildren(
+      head,
+      h("div", { class: "block note" }, "No attack templates apply to this contract (no privileged-looking methods, no withdraw flow, no yields)."),
+      customBlock(accountId, list, ai),
+    );
     attacksEl.hidden = false;
     return;
   }
@@ -231,14 +237,14 @@ async function loadAttacks(accountId) {
       "label",
       { class: "atk" },
       h("input", { type: "checkbox", value: a.id, checked: "checked" }),
-      h("div", {}, h("div", { class: "lbl" }, a.name), h("div", { class: "why" }, a.checks)),
+      h("div", {}, h("div", { class: "lbl" }, a.name), h("div", { class: "why" }, a.description)),
     ),
   );
   const run = h("button", { id: "run-btn", type: "button" }, `Run ${list.length} attack${list.length > 1 ? "s" : ""}`);
   const results = h("div", { id: "results" });
   run.addEventListener("click", () => {
     const ids = boxes.map((b) => b.querySelector("input")).filter((i) => i.checked).map((i) => i.value);
-    runAttacks(accountId, ids, run, results);
+    runAttacks(accountId, { scenario_ids: ids }, run, results);
   });
   boxes.forEach((b) =>
     b.querySelector("input").addEventListener("change", () => {
@@ -247,11 +253,16 @@ async function loadAttacks(accountId) {
       run.disabled = n === 0;
     }),
   );
-  attacksEl.replaceChildren(head, h("div", { class: "block" }, h("h3", {}, `Suggested from the risk card (${list.length})`), boxes, h("div", { class: "actions" }, run)), results);
+  attacksEl.replaceChildren(
+    head,
+    h("div", { class: "block" }, h("h3", {}, `Suggested from the risk card (${list.length})`), boxes, h("div", { class: "actions" }, run)),
+    results,
+    customBlock(accountId, list, ai),
+  );
   attacksEl.hidden = false;
 }
 
-async function runAttacks(accountId, ids, button, results) {
+async function runAttacks(accountId, payload, button, results) {
   button.disabled = true;
   const label = button.textContent;
   button.textContent = "Running in near-contract-sim…";
@@ -260,7 +271,7 @@ async function runAttacks(accountId, ids, button, results) {
     const res = await fetch("/attack", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ account_id: accountId, scenario_ids: ids }),
+      body: JSON.stringify({ account_id: accountId, ...payload }),
     });
     const body = await res.json();
     if (accountId !== current) return;
@@ -326,4 +337,94 @@ function renderResults(body, el) {
     ),
   );
   el.replaceChildren(h("div", { class: "block" }, verdictBox, init), h("div", { class: "block" }, items));
+}
+
+// ---------------------------------------------------------------------------
+// Speech-to-test: a typed plain-English sentence → scenario JSON → runner
+// ---------------------------------------------------------------------------
+
+async function llmState() {
+  try {
+    return await (await fetch("/llm")).json();
+  } catch {
+    return { configured: false };
+  }
+}
+
+async function postJson(url, body) {
+  const res = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  const out = await res.json();
+  if (!res.ok) throw new Error(`${out.error?.code}: ${out.error?.message}`);
+  return out;
+}
+
+function customBlock(accountId, presets, ai) {
+  const say = h("textarea", { id: "say", rows: "2", placeholder: "e.g. the attacker calls admin_drain and keeps the money", spellcheck: "true" });
+  const json = h("textarea", { id: "scenario-json", rows: "12", spellcheck: "false", placeholder: '{ "id": "custom:...", "name": "...", "steps": [ ... ], "checks": [ ... ] }' });
+  const note = h("div", { class: "meta custom-note" });
+  const out = h("div", { id: "custom-results" });
+  const translate = h("button", { type: "button", class: "secondary", disabled: ai.configured ? false : "disabled" }, "Translate to a test");
+  const runBtn = h("button", { id: "run-custom", type: "button" }, "Run this scenario");
+  const pick = h(
+    "select",
+    { "aria-label": "Start from a preset" },
+    h("option", { value: "" }, "start from a preset…"),
+    presets.map((p) => h("option", { value: p.id }, p.name)),
+  );
+  const status = (msg, cls = "") => note.replaceChildren(h("span", { class: cls }, msg));
+
+  pick.addEventListener("change", () => {
+    const p = presets.find((x) => x.id === pick.value);
+    if (p) json.value = JSON.stringify({ ...p.scenario, id: "custom:" + p.scenario.id.replace(/[^A-Za-z0-9_-]/g, "_") }, null, 2);
+  });
+
+  async function doTranslate() {
+    const sentence = say.value.trim();
+    if (!sentence) return status("Describe the attack first.", "warn");
+    translate.disabled = true;
+    status(`${ai.provider} (${ai.model}) is writing the scenario JSON…`);
+    try {
+      const t = await postJson("/translate", { account_id: accountId, sentence });
+      if (accountId !== current) return;
+      json.value = JSON.stringify(t.scenario, null, 2);
+      const via = t.fallback_from ? ` (fallback: ${t.fallback_from.join("; ")})` : "";
+      status(`Translated by ${t.provider} (${t.model})${t.attempts > 1 ? `, ${t.attempts} attempts` : ""}${via}. Check the JSON, edit if you like, then run it.`, t.fallback_from ? "warn" : "ok");
+    } catch (e) {
+      status(e.message, "warn");
+    } finally {
+      translate.disabled = false;
+    }
+  }
+  translate.addEventListener("click", doTranslate);
+  say.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey)) doTranslate();
+  });
+
+  runBtn.addEventListener("click", () => {
+    let scenario;
+    try {
+      scenario = JSON.parse(json.value);
+    } catch (e) {
+      return status(`The scenario is not valid JSON: ${e.message}`, "warn");
+    }
+    status("");
+    runAttacks(accountId, { scenarios: [scenario] }, runBtn, out);
+  });
+
+  status(
+    ai.configured
+      ? `Describe an attack in plain English. ${ai.provider} (${ai.model}) translates it into scenario JSON; the same runner as the presets executes it in the local sim.`
+      : "Speech-to-test is off: the server has no LLM key (NEAR_AI_API_KEY or OPEN_ROUTER_KEY). You can still write or paste scenario JSON (start from a preset), and run it.",
+  );
+  return h(
+    "div",
+    { class: "block custom" },
+    h("h3", {}, "Your own attack (speech-to-test)"),
+    note,
+    h("div", { class: "say-row" }, say, h("div", { class: "say-btns" }, translate)),
+    h("div", { class: "json-head" }, h("span", { class: "meta" }, "Scenario JSON (what the runner executes)"), pick),
+    json,
+    h("div", { class: "actions" }, runBtn),
+    out,
+  );
 }

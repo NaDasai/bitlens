@@ -1,0 +1,12 @@
+{
+  "id": "custom:drain",
+  "name": "Anyone can empty the vault",
+  "description": "The attacker calls admin_drain, sending the vault's NEAR to itself. The attacker must not profit.",
+  "steps": [
+    { "op": "call", "id": "hit", "as": "attacker", "method": "admin_drain", "args": { "receiver_id": "attacker.near" }, "attack": true }
+  ],
+  "checks": [
+    { "check": "net_at_most", "account": "attacker", "near": "0", "message": "attacker.near called admin_drain and walked away with {net.attacker}." }
+  ],
+  "explain": { "rejected": "admin_drain refused the attacker: {error.hit}" }
+}

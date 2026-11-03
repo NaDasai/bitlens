@@ -1,0 +1,22 @@
+{
+  "id": "yield:{{method}}",
+  "name": "Stale yield / timeout in {{method}}",
+  "description": "Deposit 5 NEAR, call `{{method}}` for it, never resume, advance past the yield deadline; the timeout must resolve cleanly and the 5 NEAR must come back.",
+  "steps": [
+    { "op": "control", "as": "user", "deposit_method": "{{deposit}}", "withdraw_method": "{{withdraw}}", "amount_arg": "{{amount_arg}}", "near": "5" },
+    { "op": "deposit", "id": "dep", "as": "user", "method": "{{deposit}}", "near": "5" },
+    { "op": "call", "id": "req", "as": "user", "method": "{{method}}", "args": "{{args}}", "async": true },
+    { "op": "wait_for_yield", "step": "req" },
+    { "op": "advance_past_yield" },
+    { "op": "settle" },
+    { "op": "call", "id": "w", "as": "user", "method": "{{withdraw}}", "args": { "{{amount_arg}}": "5000000000000000000000000" }, "guard_deposit": true }
+  ],
+  "checks": [
+    { "check": "yielded", "step": "req", "message": "`{{method}}` did not yield with the arguments we could build ({error.req}), so the timeout path was not exercised." },
+    { "check": "completed", "step": "req", "message": "After the yield deadline `{{method}}` did not resolve cleanly (pending receipts or sim findings)." },
+    { "check": "net_equals", "account": "user", "near": "5", "steps": ["req", "w"], "message": "Stuck funds: user.near locked 5.0000 NEAR in `{{method}}` and nobody answered before the yield deadline (block {deadline}). The timeout callback ran but neither paid out nor re-credited it: a later `{{withdraw}}` {status.w} ({error.w}). The NEAR is stuck in the contract with no owner." }
+  ],
+  "explain": {
+    "held": "Nobody answered `{{method}}` before the yield deadline; the timeout path ran cleanly and the user got all 5.0000 NEAR back."
+  }
+}

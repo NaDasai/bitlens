@@ -1,0 +1,13 @@
+{
+  "id": "custom:takeover",
+  "name": "Attacker makes itself owner, then pauses the vault",
+  "description": "The attacker calls set_owner(attacker.near) then set_paused(true). Neither may change the contract.",
+  "steps": [
+    { "op": "call", "id": "own", "as": "attacker", "method": "set_owner", "args": { "owner_id": "attacker.near" }, "attack": true },
+    { "op": "call", "id": "pause", "as": "attacker", "method": "set_paused", "args": { "paused": true }, "attack": true }
+  ],
+  "checks": [
+    { "check": "unchanged", "what": "state", "message": "A non-owner changed the vault's state (owner or pause flag)." }
+  ],
+  "explain": { "rejected": "Both admin calls were refused: {error.own}" }
+}

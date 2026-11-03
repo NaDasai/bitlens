@@ -1,0 +1,18 @@
+{
+  "id": "yield:{{method}}",
+  "name": "Stale yield / timeout in {{method}}",
+  "description": "Call `{{method}}`, never resume it, advance the clock past the yield deadline; it must resolve cleanly.",
+  "steps": [
+    { "op": "call", "id": "req", "as": "user", "method": "{{method}}", "args": "{{args}}", "async": true },
+    { "op": "wait_for_yield", "step": "req" },
+    { "op": "advance_past_yield" },
+    { "op": "settle" }
+  ],
+  "checks": [
+    { "check": "yielded", "step": "req", "message": "`{{method}}` did not yield with the arguments we could build ({error.req}), so the timeout path was not exercised." },
+    { "check": "completed", "step": "req", "message": "After the yield deadline `{{method}}` did not resolve cleanly (pending receipts or sim findings)." }
+  ],
+  "explain": {
+    "held": "The yield timed out at its deadline and the timeout path resolved cleanly (no stuck receipts, no unhandled failures)."
+  }
+}

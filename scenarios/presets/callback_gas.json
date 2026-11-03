@@ -1,0 +1,24 @@
+{
+  "id": "callback_gas",
+  "name": "Callback out-of-gas in {{withdraw}}",
+  "description": "Call `{{withdraw}}` with 8-300 Tgas; at every budget, funds paid + funds still withdrawable must equal the deposit.",
+  "steps": [
+    { "op": "control", "as": "user", "deposit_method": "{{deposit}}", "withdraw_method": "{{withdraw}}", "amount_arg": "{{amount_arg}}", "near": "5" },
+    { "op": "deposit", "id": "dep", "as": "user", "method": "{{deposit}}", "near": "5" },
+    {
+      "op": "sweep",
+      "gas_tgas": [8, 12, 16, 20, 25, 30, 35, 40, 50, 75, 100, 150, 300],
+      "label": "{status.first}, total recoverable {net.user}",
+      "steps": [
+        { "op": "call", "id": "first", "as": "user", "method": "{{withdraw}}", "args": { "{{amount_arg}}": "5000000000000000000000000" }, "guard_deposit": true, "gas_tgas": "$tgas" },
+        { "op": "call", "id": "probe", "as": "user", "method": "{{withdraw}}", "args": { "{{amount_arg}}": "5000000000000000000000000" }, "guard_deposit": true }
+      ],
+      "checks": [
+        { "check": "net_equals", "account": "user", "near": "5", "message": "With {tgas} Tgas attached to `{{withdraw}}`, the callback ran short of gas and left the books half-applied: withdrawing everything afterwards got the user {net.user} instead of +5.0000 NEAR." }
+      ]
+    }
+  ],
+  "explain": {
+    "held": "At every caller gas from 8 to 300 Tgas the user could recover exactly 5.0000 NEAR. No half-applied state. Sweep: {sweep}"
+  }
+}

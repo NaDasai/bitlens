@@ -3,31 +3,47 @@
  *   npm run attack -- vulnerable-vault.xray-demo
  *   npm run attack -- <account> --list             # suggested scenarios only
  *   npm run attack -- <account> --only unauth:admin_drain,double_withdraw
- *   add --json for the raw report, --trace for full receipt trees
+ *   npm run attack -- <account> --scenario my-attack.json    # run your own scenario JSON
+ *   npm run attack -- <account> --say "the attacker calls admin_drain and keeps the money"
+ *                                   # English → scenario JSON via the LLM (NEAR AI Cloud, fallback OpenRouter)
+ *   add --json for the raw report, --trace for full receipt trees,
+ *   --print-scenario to print the scenario JSON (with --list: every preset's JSON)
  */
-import { listAttacks, runAttacks, toErrorPayload, verdictOf } from "../core/index.js";
+import { readFile } from "node:fs/promises";
+import { listAttacks, runAttacks, scan, toErrorPayload, translateToScenario, verdictOf } from "../core/index.js";
 
 const ICON = { held: "✅ HELD", broken: "❌ BROKEN", inconclusive: "❔ INCONCLUSIVE", not_applicable: "➖ N/A", error: "⚠️ ERROR" } as const;
 
 async function main() {
   const args = process.argv.slice(2);
-  const id = args.find((a) => !a.startsWith("--") && args[args.indexOf(a) - 1] !== "--only");
+  const valued = ["--only", "--say", "--scenario"];
+  const id = args.find((a, i) => !a.startsWith("--") && !valued.includes(args[i - 1]));
   if (!id) {
-    console.error("usage: npm run attack -- <account_id> [--list] [--only id1,id2] [--json] [--trace]");
+    console.error('usage: npm run attack -- <account_id> [--list] [--only id1,id2] [--scenario file.json] [--say "english"] [--print-scenario] [--json] [--trace]');
     process.exit(2);
   }
-  const onlyIdx = args.indexOf("--only");
-  const only = onlyIdx >= 0 ? args[onlyIdx + 1]?.split(",").filter(Boolean) : undefined;
+  const opt = (name: string) => (args.indexOf(name) >= 0 ? args[args.indexOf(name) + 1] : undefined);
+  const only = opt("--only")?.split(",").filter(Boolean);
+  const printScenario = args.includes("--print-scenario");
   try {
     if (args.includes("--list")) {
       const { card, attacks } = await listAttacks(id);
-      if (args.includes("--json")) return console.log(JSON.stringify(attacks, null, 2));
+      if (args.includes("--json") || printScenario) return console.log(JSON.stringify(printScenario ? attacks.map((a) => a.scenario) : attacks, null, 2));
       console.log(`${card.summary}\n\nSuggested attacks (${attacks.length}):`);
-      for (const a of attacks) console.log(`  ${a.id.padEnd(32)} ${a.name}\n  ${"".padEnd(32)} checks: ${a.checks}`);
+      for (const a of attacks) console.log(`  ${a.id.padEnd(32)} ${a.name}\n  ${"".padEnd(32)} checks: ${a.description}`);
       return;
     }
-    console.error(`Running attacks on ${id} in near-contract-sim (local, no transactions sent anywhere)…`);
-    const { card, report } = await runAttacks(id, only);
+    let custom: unknown[] | undefined;
+    if (opt("--scenario")) custom = [JSON.parse(await readFile(opt("--scenario")!, "utf8"))];
+    if (opt("--say")) {
+      console.error(`Translating into scenario JSON…`);
+      const t = await translateToScenario(opt("--say"), await scan(id));
+      console.error(`  ${t.provider}, ${t.model}, ${t.attempts} attempt(s)${t.fallback_from ? ` (fallback: ${t.fallback_from.join("; ")})` : ""}`);
+      custom = [t.scenario];
+    }
+    if (custom && printScenario) console.log(JSON.stringify(custom[0], null, 2));
+    console.error(`Running ${custom ? "the custom scenario" : "attacks"} on ${id} in near-contract-sim (local, no transactions sent anywhere)…`);
+    const { card, report } = await runAttacks(id, only, { custom });
     if (args.includes("--json")) return console.log(JSON.stringify({ card, report, ...verdictOf(card, report) }, null, 2));
     console.log(`\n=== NEAR X-Ray attack report: ${report.account_id} ===`);
     console.log(`init: ${report.init.ok ? `${report.init.method} (by ${report.init.signer})` : "not initialised (no init call succeeded)"}`);
