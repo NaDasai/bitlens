@@ -16,6 +16,11 @@
 - Treat every tool / HTTP input as untrusted; validate `account_id`
   (core/accountId.ts) before use.
 - No source-code / backdoor diffing features.
+- Attacks are scenario JSON (runner/src/scenario.rs, core/scenario.ts, scenarios/presets/).
+  Keep the Rust and zod schemas in sync. The LLM (NEAR AI Cloud) only translates
+  English into scenario JSON; never let it produce code. Validate its output.
+- No privacy claims about NEAR AI: X-Ray analyses public bytecode; NEAR AI is just the
+  ecosystem LLM for the translation step.
 - Never report BROKEN or HELD without evidence from the sim; when X-Ray could
   not drive the contract, the honest answer is INCONCLUSIVE.
 

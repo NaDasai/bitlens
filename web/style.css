@@ -115,3 +115,20 @@ h2.plain { font-family: system-ui, sans-serif; }
 .delta.pos { color: var(--green); } .delta.neg { color: var(--red); }
 pre.trace { font: 11.5px/1.45 var(--mono); background: #0d1117; border: 1px solid var(--line); border-radius: 8px; padding: 10px; overflow-x: auto; max-height: 420px; color: var(--muted); }
 @media (max-width: 560px) { .verdict { flex-direction: column; } .pill { max-width: 100%; } }
+
+/* speech-to-test */
+.custom textarea { width: 100%; box-sizing: border-box; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg, #0d1117); color: var(--text); font: 13px/1.45 var(--mono); resize: vertical; }
+.custom textarea:focus { outline: 2px solid var(--accent); border-color: transparent; }
+#say { font-family: inherit; font-size: 14px; }
+.say-row { display: flex; gap: 8px; align-items: stretch; margin: 10px 0 12px; }
+.say-row textarea { flex: 1; min-width: 0; }
+.say-btns { display: flex; flex-direction: column; gap: 6px; }
+.say-btns button, .custom select { padding: 8px 12px; white-space: nowrap; }
+.custom select { border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font: inherit; font-size: 13px; max-width: 55%; }
+button.secondary:disabled { opacity: .5; cursor: not-allowed; }
+.mic.recording { border-color: var(--red); color: var(--red); }
+.json-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; }
+#run-custom { padding: 10px 18px; background: var(--accent); color: #04120c; border: 0; font-weight: 600; }
+#run-custom:disabled { opacity: .6; cursor: wait; }
+.custom-note .warn { color: var(--yellow); } .custom-note .ok { color: var(--green); }
+@media (max-width: 480px) { .say-row { flex-direction: column; } .say-btns { flex-direction: row; } .json-head { flex-direction: column; align-items: stretch; } .custom select { max-width: 100%; } }

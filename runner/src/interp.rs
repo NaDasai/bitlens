@@ -161,6 +161,7 @@ fn callback_after_transfer(out: &TxOutcome, c: &str) -> bool {
 #[derive(Clone)]
 struct StepRecord {
     id: String,
+    label: String,
     nets: BTreeMap<String, i128>,
     signer: Option<String>,
     deposit: u128,
@@ -221,6 +222,7 @@ impl Recorder {
         let nets = self.watch().iter().map(|w| (w.to_string(), net_of(out, w))).collect();
         self.steps.push(StepRecord {
             id: o.id.into(),
+            label: label.into(),
             nets,
             signer: o.signer.map(String::from),
             deposit: o.deposit,
@@ -719,6 +721,28 @@ fn evaluate(sim: &Sim, rec: &Recorder, env: &Env, checks: &[Check]) -> Option<(S
     None
 }
 
+/// "attacker net ≤ 0, state unchanged" for default explanations.
+fn check_names(checks: &[Check]) -> String {
+    let who = |a: &Acct| format!("{a:?}").to_lowercase();
+    let names: Vec<String> = checks
+        .iter()
+        .map(|c| match c {
+            Check::NetAtMost { account, near, .. } => format!("{} net ≤ {} NEAR", who(account), near.as_str().map(String::from).unwrap_or(near.to_string())),
+            Check::NetAtLeast { account, near, .. } => format!("{} net ≥ {} NEAR", who(account), near.as_str().map(String::from).unwrap_or(near.to_string())),
+            Check::NetEquals { account, near, .. } => format!("{} net = {} NEAR", who(account), near.as_str().map(String::from).unwrap_or(near.to_string())),
+            Check::Unchanged { what, .. } => format!("contract {} unchanged", format!("{what:?}").to_lowercase()),
+            Check::StepSucceeded { step, .. } => format!("`{step}` succeeded"),
+            Check::StepFailed { step, .. } => format!("`{step}` rejected"),
+            Check::AnySucceeded { .. } => "setup ran".into(),
+            Check::TransferFailed { .. } => "payout failure triggered".into(),
+            Check::CallbackAfterTransfer { .. } => "failure branch present".into(),
+            Check::Completed { step, .. } => format!("`{step}` resolved cleanly"),
+            Check::Yielded { step, .. } => format!("`{step}` yielded"),
+        })
+        .collect();
+    if names.is_empty() { "none were given".into() } else { names.join(", ") }
+}
+
 pub fn run_scenario(world: &World, sc: &Scenario) -> ScenarioResult {
     let t0 = Instant::now();
     let mut sim = world.sim.clone();
@@ -750,14 +774,19 @@ pub fn run_scenario(world: &World, sc: &Scenario) -> ScenarioResult {
                         Status::Inconclusive,
                         format!("The contract could not be initialised in the sim (no init method accepted the guessed arguments), so this rejection may only mean missing state, not an owner check. Contract said: {}", r.error),
                     ),
+                    Some(r) if r.error.contains("MethodNotFound") => (
+                        Status::Inconclusive,
+                        format!("The contract has no such method ({}), so there was nothing to attack.", r.label),
+                    ),
                     Some(r) if is_input_problem(&r.error) => (
                         Status::Inconclusive,
                         format!("Could not build valid arguments for this call from bytecode alone, so access control was not exercised. Contract said: {}", r.error),
                     ),
                     Some(_) if sc.explain.rejected.is_some() => (Status::Held, render(sc.explain.rejected.as_deref().unwrap(), &rec, &env)),
+                    Some(r) if sc.explain.held.is_none() => (Status::Held, format!("The attack was rejected ({}): {}. Checks held: {}.", r.label, r.error, check_names(&sc.checks))),
                     _ => (
                         Status::Held,
-                        sc.explain.held.as_deref().map(|t| render(t, &rec, &env)).unwrap_or_else(|| format!("All {} check(s) held.", sc.checks.len())),
+                        sc.explain.held.as_deref().map(|t| render(t, &rec, &env)).unwrap_or_else(|| format!("Every check held: {}.", check_names(&sc.checks))),
                     ),
                 }
             }

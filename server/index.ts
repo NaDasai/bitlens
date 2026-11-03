@@ -6,6 +6,10 @@
  *   GET  /attacks?account_id=…      suggested attack scenarios (no sim run)
  *   POST /attack {"account_id","scenario_ids"?}   run them in near-contract-sim
  *   GET  /engine                     attack-engine warm-up status
+ *   POST /attack {"account_id","scenarios":[…]}  run custom scenario JSON instead
+ *   POST /translate {"account_id","sentence"}    English → scenario JSON (NEAR AI Cloud)
+ *   POST /transcribe  (audio body)               speech → text (Whisper on NEAR AI Cloud)
+ *   GET  /nearai                     speech-to-test configuration (never the key)
  *   GET  /       static web UI (web/)
  */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
@@ -13,6 +17,11 @@ import { readFile } from "node:fs/promises";
 import { extname, join, normalize, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  InputError,
+  nearAiStatus,
+  scan as scanCard,
+  transcribe,
+  translateToScenario,
   engineStatus,
   EngineNotReadyError,
   listAttacks,
@@ -43,9 +52,24 @@ async function readJson(req: IncomingMessage): Promise<any> {
   let raw = "";
   for await (const chunk of req) {
     raw += chunk;
-    if (raw.length > 64 * 1024) throw new Error("request body too large");
+    if (raw.length > 64 * 1024) throw new InputError("request body larger than 64 KB");
   }
-  return raw ? JSON.parse(raw) : {};
+  try {
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    throw new InputError("request body is not valid JSON");
+  }
+}
+
+async function readBytes(req: IncomingMessage, max: number): Promise<Uint8Array> {
+  const chunks: Buffer[] = [];
+  let n = 0;
+  for await (const chunk of req as AsyncIterable<Buffer>) {
+    n += chunk.length;
+    if (n > max) throw new InputError(`request body larger than ${max / 1024 / 1024} MB`);
+    chunks.push(chunk);
+  }
+  return new Uint8Array(Buffer.concat(chunks));
 }
 
 async function serveStatic(pathname: string, res: ServerResponse) {
@@ -75,6 +99,22 @@ export const server = createServer(async (req, res) => {
 
     if (url.pathname === "/engine") return sendJson(res, 200, engineStatus());
 
+    if (url.pathname === "/nearai") return sendJson(res, 200, nearAiStatus());
+
+    if (url.pathname === "/translate" && req.method === "POST") {
+      const body = await readJson(req);
+      const card = await scanCard(body.account_id); // validates account_id
+      const t = await translateToScenario(body.sentence, card);
+      return sendJson(res, 200, { account_id: card.account_id, ...t });
+    }
+
+    if (url.pathname === "/transcribe" && req.method === "POST") {
+      const mime = String(req.headers["content-type"] ?? "").split(";")[0];
+      if (!/^audio\//.test(mime)) throw new InputError("POST the recording as the body with an audio/* content-type");
+      const audio = await readBytes(req, 8 * 1024 * 1024);
+      return sendJson(res, 200, await transcribe(audio, mime));
+    }
+
     if (url.pathname === "/attacks") {
       const { card, attacks } = await listAttacks(url.searchParams.get("account_id") ?? "");
       return sendJson(res, 200, { account_id: card.account_id, attacks });
@@ -84,11 +124,13 @@ export const server = createServer(async (req, res) => {
       const body = await readJson(req);
       if (body.scenario_ids !== undefined && !(Array.isArray(body.scenario_ids) && body.scenario_ids.every((s: unknown) => typeof s === "string")))
         return sendJson(res, 400, { error: { code: "BAD_REQUEST", message: "scenario_ids must be an array of strings" } });
+      if (body.scenarios !== undefined && !Array.isArray(body.scenarios))
+        return sendJson(res, 400, { error: { code: "BAD_REQUEST", message: "scenarios must be an array of scenario objects" } });
       if (!warmReady()) {
         const st = engineStatus();
         throw new EngineNotReadyError(`Attack engine still warming up (${st.state}${st.detail ? `: ${st.detail}` : ""}, ${st.elapsed_s}s). Retry shortly; /scan works meanwhile.`);
       }
-      const { card, report } = await runAttacks(body.account_id, body.scenario_ids);
+      const { card, report } = await runAttacks(body.account_id, body.scenario_ids, { custom: body.scenarios });
       return sendJson(res, 200, { report, ...verdictOf(card, report) });
     }
 

@@ -11,12 +11,17 @@ account id ─view_code RPC─▶ WASM ─▶ ① risk card ─▶ ② attacks i
                                       privileged methods)                                  dangerous
              web UI ◀── HTTP ──┐                                  ┌── MCP (stdio) ──▶ AI agents
                                └────────── core/ (one engine) ────┘
+
+  "the attacker calls admin_drain and keeps the money" ─NEAR AI Cloud─▶ scenario JSON ─▶ same runner
+   (typed, or spoken → Whisper on NEAR AI)                                  (presets are scenario JSON too)
 ```
 
 ## Contents
 - [Quickstart](#quickstart)
 - [What you will see](#what-you-will-see)
 - [MCP server (for AI agents)](#mcp-server-for-ai-agents)
+- [Speech-to-test (NEAR AI Cloud)](#speech-to-test-near-ai-cloud)
+- [Scenario JSON](#scenario-json)
 - [How it works](#how-it-works)
 - [Attack catalogue](#attack-catalogue)
 - [NEAR features used](#near-features-used)
@@ -41,9 +46,9 @@ account id ─view_code RPC─▶ WASM ─▶ ① risk card ─▶ ② attacks i
 ### Steps (each with expected output)
 
 1. `npm install`
-2. `npm test` → `# pass 12`, `# fail 0` (account-id validation, capability detection, RPC errors and the offline fallback against a fake RPC, attack selection, verdict rules; no network).
+2. `npm test` → `# pass 23`, `# fail 0` (account-id validation, capability detection, RPC errors and the offline fallback against a fake RPC, attack selection, verdict rules, scenario validation, and speech-to-test against a fake NEAR AI server; no network).
 3. `npm run build:runner` (the first-build warning above applies) → ends with `Finished \`release\` profile [optimized]`; the binary is `runner/target/release/xray-runner`. You can skip this: the server and MCP server start the same build in the background if the binary is missing.
-4. `npm run test:sim` → `# pass 5`, ~2 s. Pins the status of **every** scenario on all four demo contracts, plus the risk level and verdict, through the real engine. If it passes, the demo tells the same story.
+4. `npm run test:sim` → `# pass 8`, ~2 s. Pins the status of **every** scenario on all four demo contracts, plus the risk level and verdict, through the real engine. It also runs custom scenario JSON end to end, and checks that the runner rejects malformed scenarios on its own. If it passes, the demo tells the same story.
    By hand: `npm run attack -- vulnerable-vault.xray-demo` → 8 scenarios, `Summary: 6 held, 2 broken, 0 inconclusive`, `VERDICT: DANGEROUS`, exit code 3; `npm run attack -- clean-vault.xray-demo` → `7 held, 0 broken`, `VERDICT: SAFE`, exit code 0.
 5. `npm run server` → `NEAR X-Ray backend on http://localhost:8787` and, a few seconds later, `[engine] attack engine ready`.
 6. Open **http://localhost:8787** and follow the demo path below.
@@ -52,7 +57,8 @@ account id ─view_code RPC─▶ WASM ─▶ ① risk card ─▶ ② attacks i
    - All four demo verdicts.
    - Live RPC for wrap.near / token.sweat / aurora. This also refreshes the offline copy of their code (see below).
    - Port 8787 free.
-   - MCP server starts and lists 4 tools.
+   - NEAR AI key present (⚠ if not; speech-to-test is optional).
+   - MCP server starts and lists 5 tools.
 
    Exit code 1 if anything the demo needs is broken.
 8. *Optional, live mainnet:* `npm run test:live` → `# pass 2` (scans wrap.near, token.sweat and aurora; checks each locally computed code hash against the RPC's; checks the `UNKNOWN_ACCOUNT` / `NO_CONTRACT_CODE` errors).
@@ -100,9 +106,10 @@ An agent that is about to call, deposit into or approve a NEAR contract can ask 
 | Tool | Does | Speed |
 |---|---|---|
 | `scan_contract(account_id)` | capability risk card | instant |
-| `list_attacks(account_id)` | scenarios that apply, with ids | instant |
+| `list_attacks(account_id, include_scenarios?)` | scenarios that apply, with ids (and their scenario JSON, as examples) | instant |
 | `run_attacks(account_id, scenario_ids?)` | runs them in the local sim: status, explanation, receipt sequence, NEAR deltas | ~1 s |
 | `assess_contract(account_id)` | scan + all attacks → `safe` / `caution` / `dangerous` with reasons | ~1 s |
+| `run_custom_attack(account_id, description \| scenario, dry_run?)` | your own attack idea: plain English (translated by NEAR AI Cloud) or scenario JSON the agent wrote, run in the sim; returns the scenario and its result | ~1 s (+ LLM) |
 
 Every tool is read-only (`readOnlyHint`). Inputs are untrusted: `account_id` is validated against NEAR's account-id rules before any use, and bad ids return `isError` with `INVALID_ACCOUNT_ID`. While the engine is still building or warming, `run_attacks` says so, and `assess_contract` returns a scan-only `caution` marked `attacks_run: false`. Neither blocks. Logs go to stderr.
 
@@ -135,7 +142,79 @@ claude mcp add near-xray -- "$PWD/node_modules/.bin/tsx" "$PWD/mcp/server.ts"
 > 1. Anyone can call `admin_drain`: an attacker account emptied the whole vault (67.8 NEAR) with no owner check.
 > 2. Two `withdraw` calls in the same block both paid out (5 NEAR deposited, 10 NEAR back), with the extra coming from other depositors' money.
 
-Without an agent: `node_modules/.bin/tsx scripts/mcp-smoke.ts --wait` drives the server with the SDK client. It lists the 4 tools, checks that a bad id is rejected, lists attacks, then calls `assess_contract` until the engine is warm → `DANGEROUS`.
+Without an agent: `node_modules/.bin/tsx scripts/mcp-smoke.ts --wait` drives the server with the SDK client. It lists the 5 tools, checks that a bad id is rejected, lists attacks, then calls `assess_contract` until the engine is warm → `DANGEROUS`.
+
+## Speech-to-test (NEAR AI Cloud)
+
+Describe an attack in plain English, for example *"the attacker calls admin_drain and keeps the money"*, or say it into the mic. X-Ray turns it into a test and runs it on the contract's real bytecode in the local sim.
+
+The LLM has one job: translate the sentence into a **scenario JSON object** in the [format below](#scenario-json). It never writes code. The JSON then runs through the same runner as the built-in presets.
+
+- **Provider:** [NEAR AI Cloud](https://cloud.near.ai), which is OpenAI-compatible. `POST https://cloud-api.near.ai/v1/chat/completions` with `response_format: {"type": "json_object"}`. NEAR AI is used here simply as the NEAR ecosystem's LLM for the translation step. X-Ray only analyses public on-chain bytecode.
+- **Voice:** the web UI's 🎤 button records audio and sends it to `/v1/audio/transcriptions` on NEAR AI Cloud (`openai/whisper-large-v3`). The transcript is then translated the same way.
+- **Prompt:** the model sees the scenario language, this contract's real method list and capabilities, and two of its presets as worked examples.
+- **Untrusted output:** what comes back is
+  1. checked against the schema (`core/scenario.ts`, zod);
+  2. checked so every method it calls is one the contract really exports;
+  3. sent back once with the error if it fails, so the model can fix it;
+  4. validated and bounded again by the Rust runner.
+
+  A scenario can only sign as the four sim accounts, only call the contract under test, and is size-limited.
+- **Results:** you see the JSON before it runs and can edit it. A run made only of custom scenarios never reports SAFE: one idea tested is not an assessment.
+
+| Env var | Default | |
+|---|---|---|
+| `NEAR_AI_API_KEY` | (none) | bearer key; without it, speech-to-test is off, and everything else (including hand-written scenario JSON) works |
+| `NEAR_AI_MODEL` | `Qwen/Qwen3.6-35B-A3B-FP8` | any chat model from the [catalogue](https://cloud-api.near.ai/v1/models) with JSON mode; the default is an open-weight reasoning model |
+| `NEAR_AI_STT_MODEL` | `openai/whisper-large-v3` | speech-to-text |
+| `NEAR_AI_BASE_URL` | `https://cloud-api.near.ai/v1` | override (the tests point it at a local fake) |
+
+Try it:
+- **Web:** `NEAR_AI_API_KEY=… npm run server` → scan `vulnerable-vault` → *Your own attack* → type or speak → **Translate with NEAR AI** → review the JSON → **Run this scenario** → ❌ BROKEN, with the drain's receipt trail.
+- **CLI:**
+  ```bash
+  NEAR_AI_API_KEY=… npm run attack -- vulnerable-vault.xray-demo --say "the attacker calls admin_drain and keeps the money" --print-scenario
+  ```
+- **No key:** `npm run attack -- vulnerable-vault.xray-demo --scenario scenarios/examples/drain.json` → ❌ BROKEN, `attacker.near called admin_drain and walked away with +67.8015 NEAR.` In the web UI, pick *start from a preset…*, edit the JSON and run it.
+- **MCP:** `run_custom_attack` with `description` (NEAR AI) or `scenario` (JSON the agent wrote).
+
+## Scenario JSON
+
+Every attack is one JSON object: the six built-in presets (`scenarios/presets/*.json`, filled in from the risk card), the examples in `scenarios/examples/`, and whatever speech-to-test produces. The Rust runner (`runner/src/interp.rs`) maps each step onto a near-contract-sim operation against the contract under test. It then evaluates the checks in order: the first one that fails decides the result (BROKEN unless the check says `"else": "inconclusive"` or `"not_applicable"`). If all hold, the result is HELD.
+
+```json
+{
+  "id": "custom:drain",
+  "name": "Anyone can empty the vault",
+  "steps": [
+    { "op": "call", "id": "hit", "as": "attacker", "method": "admin_drain",
+      "args": { "receiver_id": "attacker.near" }, "attack": true }
+  ],
+  "checks": [
+    { "check": "net_at_most", "account": "attacker", "near": "0",
+      "message": "attacker.near called admin_drain and walked away with {net.attacker}." }
+  ],
+  "explain": { "rejected": "admin_drain refused the attacker: {error.hit}" }
+}
+```
+
+| Steps (`op`) | |
+|---|---|
+| `call` | `as` (owner / victim / attacker / user), `method`, `args`, `deposit_near` or `deposit_yocto`, `gas_tgas`, `async` (lands in the same block as other async calls), `hold_transfer_blocks` (hold the payout in flight), `attack` (the call under test), `expect` (setup expectation), `guard_deposit` |
+| `deposit` | fund an account via a payable method (registers NEP-145 storage first) |
+| `control` | prove a plain deposit → withdraw works on a scratch copy; otherwise the scenario is INCONCLUSIVE |
+| `settle`, `wait_for_receipt`, `wait_for_yield`, `advance_past_yield`, `advance_blocks` | drive the chain |
+| `delete_account`, `create_account` | test-harness moves (kept out of the NEAR totals) |
+| `sweep` | repeat steps per gas value (`"gas_tgas": "$tgas"`), checking each time |
+
+| Checks (`check`) | |
+|---|---|
+| `net_at_most` / `net_at_least` / `net_equals` | net NEAR of `account` (a role or `contract`), over all steps or the listed `steps` |
+| `unchanged` | the contract's `code` / `keys` / `state` vs. before the steps |
+| `step_succeeded` / `step_failed` / `any_succeeded` | call outcomes |
+| `transfer_failed`, `callback_after_transfer`, `completed`, `yielded` | receipt-level facts |
+
+`message` and `explain` texts can use `{net.attacker}`, `{net.contract}`, `{error.<step>}`, `{status.<step>}`, `{tgas}`, `{sweep}` and `{deadline}`. `xray-runner --validate file.json` checks a scenario on its own.
 
 ## How it works
 
@@ -159,7 +238,7 @@ Risk: **HIGH** for a strong critical capability, or a drain-style method (`drain
 
 ### ② Attack simulation
 
-`runner/` is a small Rust binary over [near-contract-sim](https://github.com/near/near-contract-sim) (pinned by git rev). That is nearcore 2.14's own runtime in-process: real gas, receipts, callbacks, refunds and yields. Node passes it a JSON spec on stdin and gets JSON results back.
+`runner/` is a small Rust binary over [near-contract-sim](https://github.com/near/near-contract-sim) (pinned by git rev). That is nearcore 2.14's own runtime in-process: real gas, receipts, callbacks, refunds and yields. Node passes it a JSON spec on stdin: the WASM path, init candidates, and a list of [scenario JSON](#scenario-json) objects. The runner gets JSON results back. The runner is an interpreter for scenarios; no attack logic is hard-coded in Rust.
 
 For each contract it builds one world: `owner.near`, `victim.near`, `attacker.near` and `user.near` with 100 NEAR each; the contract deployed with 50 NEAR; `new`/`init` tried with guessed arguments; the victim deposits 20 NEAR. Each scenario then runs on its own **clone** of that world (~2 ms). Arguments come from the bytecode alone: a "kitchen-sink" object where every account-like field is the attacker, plus `amount`, `public_key`, `code` and similar.
 
@@ -198,11 +277,20 @@ Each result has: name, status (`held` / `broken` / `inconclusive` / `not_applica
 - `GET /attacks?account_id=…` → applicable scenarios.
 - `POST /attack {"account_id", "scenario_ids"?}` → `{report, verdict, reasons}`.
 - `GET /engine` → `{state: cold|building|warming|ready|failed, elapsed_s}`.
-- Errors return a code: `400 INVALID_ACCOUNT_ID` / `BAD_REQUEST`, `404 UNKNOWN_ACCOUNT` / `NO_CONTRACT_CODE`, `502 RPC_UNAVAILABLE`, `503 ENGINE_WARMING_UP`.
+- `POST /attack {"account_id", "scenarios": [<scenario JSON>]}` → runs custom scenarios instead of the presets.
+- `POST /translate {"account_id", "sentence"}` → `{scenario, model, attempts}` (NEAR AI Cloud).
+- `POST /transcribe` with an `audio/*` body (≤ 8 MB) → `{text, model}` (Whisper on NEAR AI Cloud).
+- `GET /nearai` → `{configured, model, stt_model, base_url}` (never the key).
+- Errors return a code:
+  - `400`: `INVALID_ACCOUNT_ID`, `BAD_REQUEST`, `SCENARIO_INVALID`
+  - `404`: `UNKNOWN_ACCOUNT`, `NO_CONTRACT_CODE`
+  - `502`: `RPC_UNAVAILABLE`, `NEAR_AI_ERROR`, `NEAR_AI_AUTH`, `NEAR_AI_UNAVAILABLE`
+  - `503`: `ENGINE_WARMING_UP`, `NEAR_AI_NOT_CONFIGURED`
 
 CLI:
 - `npm run scan -- <ids…> [--json]`, or `npm run scan -- --wasm file.wasm` (offline; `scripts/fetch-reference-wasm.sh` downloads public builds of wrap/aurora/sweat).
 - `npm run attack -- <id> [--list] [--only a,b] [--json] [--trace]` (exit code 3 if anything is broken).
+- `npm run attack -- <id> --scenario file.json` runs your own scenario JSON. `--say "english"` translates a sentence with NEAR AI first. `--print-scenario` prints the JSON; with `--list`, it prints every preset's JSON.
 
 Environment:
 - `NEAR_RPC_URL`: comma-separated RPC URLs. Testnet works too.
@@ -214,12 +302,13 @@ Environment:
 ## Repo layout
 
 ```
-core/       the one engine: RPC, scan, capability rules, attack selection, verdict, runner bridge
+core/       the one engine: RPC, scan, capability rules, attack selection, scenario schema + presets, speech-to-test (NEAR AI), verdict, runner bridge
 server/     HTTP front door (thin) + static web UI from web/
 mcp/        MCP front door (thin, stdio)
 cli/        scan / attack CLIs (thin)
 web/        static HTML/CSS/JS; all text rendered via textContent
-runner/     Rust attack runner over near-contract-sim (JSON in, JSON out)
+runner/     Rust scenario interpreter over near-contract-sim (scenario.rs: format + validation, interp.rs: execution)
+scenarios/  presets/*.json (the six attack templates as canned scenario JSON), examples/*.json
 contracts/  clean / risky / vulnerable / yield-escrow demo contracts (near-sdk 5.29) + res/*.wasm
 scripts/    preflight.ts (pre-demo checklist), mcp-smoke.ts, fetch-reference-wasm.sh
 .cache/     last fetched code per account, for the offline fallback (gitignored)
@@ -233,5 +322,6 @@ scripts/    preflight.ts (pre-demo checklist), mcp-smoke.ts, fetch-reference-was
 - **Templates, not fuzzing.** Six scenario templates aimed at common NEAR bug classes, driven by the risk card. Logic bugs outside them (pricing, oracle, cross-contract token flows with real counterparties) are not tested. Other contracts the target calls are not deployed, so those calls fail in the sim.
 - **Yield detection needs a hint in the method name.** Template 6 picks methods named like `request`/`sign`/`wait`/`ask`. A yield started from a differently named method is not attacked. It is verified on yield-escrow, both the buggy and the fixed build.
 - **Offline cache is a last-known copy.** If the contract was redeployed since the cached fetch, a cached card describes the old code. The card shows the fetch time and block height.
+- **Speech-to-test is only as good as the translation.** The LLM can misread a sentence. That is why the JSON is shown, and can be edited, before it runs, and why a result only means what its checks say. The NEAR AI integration was tested against a fake OpenAI-compatible server (request shape, JSON mode, retry, errors, Whisper upload). Running it for real needs your `NEAR_AI_API_KEY`.
 - **Fresh state.** The sim starts from a fresh `init`, not a copy of the contract's mainnet storage.
 - **First build is heavy** (see above). After that a full assessment takes ~0.2-1 s.

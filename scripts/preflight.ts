@@ -8,7 +8,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { DEMO_CONTRACTS, RUNNER_BIN, runAttacks, scan, verdictOf } from "../core/index.js";
+import { DEMO_CONTRACTS, nearAiStatus, RUNNER_BIN, runAttacks, scan, verdictOf } from "../core/index.js";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const PORT = Number(process.env.PORT ?? 8787);
@@ -59,7 +59,13 @@ for (const id of ["wrap.near", "token.sweat", "aurora"]) {
   }
 }
 
-// 4. Web server port
+// 4. Speech-to-test (optional)
+const ai = nearAiStatus();
+ai.configured
+  ? ok(`speech-to-test: NEAR AI Cloud key set (model ${ai.model}, speech ${ai.stt_model})`)
+  : warn("speech-to-test: NEAR_AI_API_KEY not set; the custom-attack box accepts hand-written scenario JSON only");
+
+// 5. Web server port
 try {
   const r = await fetch(`http://localhost:${PORT}/health`);
   r.ok ? ok(`a server is already answering on :${PORT} (/health ok)`) : warn(`port ${PORT} answers /health with ${r.status}: something else is running there?`);
@@ -67,14 +73,14 @@ try {
   ok(`port ${PORT} is free for \`npm run server\``);
 }
 
-// 5. MCP server: starts and lists its tools
+// 6. MCP server: starts and lists its tools
 try {
   const transport = new StdioClientTransport({ command: `${root}node_modules/.bin/tsx`, args: [`${root}mcp/server.ts`], stderr: "ignore" });
   const client = new Client({ name: "xray-preflight", version: "0.0.0" });
   await client.connect(transport);
   const { tools } = await client.listTools();
   const names = tools.map((t) => t.name).sort().join(", ");
-  tools.length === 4 ? ok(`MCP server starts over stdio; tools: ${names}`) : bad(`MCP server lists ${tools.length} tools: ${names}`);
+  tools.length === 5 ? ok(`MCP server starts over stdio; tools: ${names}`) : bad(`MCP server lists ${tools.length} tools: ${names}`);
   await client.close();
 } catch (e: any) {
   bad(`MCP server: ${e.message}`);

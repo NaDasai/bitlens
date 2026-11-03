@@ -239,6 +239,8 @@ export function customAttacks(scenarios: unknown[]): AttackScenario[] {
   if (scenarios.length > 10) throw new InputError("At most 10 custom scenarios per run");
   return scenarios.map((raw) => {
     const scenario = validateScenario(raw);
+    // Custom results are recognisable in every report (and never pass for a preset).
+    if (!scenario.id.startsWith("custom:")) scenario.id = `custom:${scenario.id}`.slice(0, 96);
     return { id: scenario.id, name: scenario.name, kind: "custom" as const, description: scenario.description ?? "", scenario };
   });
 }
@@ -318,6 +320,15 @@ export function verdictOf(card: RiskCard, report: AttackReport | null): { verdic
   const broken = report?.results.filter((r) => r.status === "broken") ?? [];
   for (const b of broken) reasons.push(`❌ BROKEN: ${b.name}: ${b.explanation}`);
   if (broken.length) return { verdict: "dangerous", reasons };
+
+  // Only hand-written / spoken scenarios ran: they say nothing about the rest of the contract.
+  if (report?.results.length && report.results.every((r) => r.id.startsWith("custom:"))) {
+    const held = report.results.filter((r) => r.status === "held").length;
+    return {
+      verdict: "caution",
+      reasons: [`Your custom scenario${report.results.length > 1 ? "s" : ""}: ${held} of ${report.results.length} held. That tests one idea, not the contract: run the suggested attacks for a verdict.`],
+    };
+  }
 
   if (card.risk.level !== "low") reasons.push(`Capability risk ${card.risk.level.toUpperCase()}: ${card.risk.reasons.slice(0, 3).join("; ")}`);
   const unsure = report?.results.filter((r) => r.status === "inconclusive" || r.status === "error") ?? [];

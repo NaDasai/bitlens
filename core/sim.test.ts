@@ -64,3 +64,52 @@ test("vulnerable admin_drain: the NEAR really moves to the attacker", { skip: !b
   assert.ok(BigInt(d["attacker.near"].yocto) > 60n * 10n ** 24n, "attacker gains > 60 NEAR");
   assert.equal(BigInt(d["attacker.near"].yocto), -BigInt(d["vulnerable-vault.xray-demo"].yocto));
 });
+
+// --- custom scenario JSON (what speech-to-test produces) through the real runner ---
+
+const DRAIN = {
+  id: "custom:drain",
+  name: "Attacker drains the vault",
+  steps: [{ op: "call", id: "hit", as: "attacker", method: "admin_drain", args: { receiver_id: "attacker.near" }, attack: true }],
+  checks: [{ check: "net_at_most", account: "attacker", near: "0", message: "attacker.near walked away with {net.attacker}." }],
+  explain: { rejected: "admin_drain refused the attacker: {error.hit}" },
+};
+
+test("custom JSON: anyone can drain the vulnerable vault → BROKEN with the money trail", { skip: !built && "runner not built" }, async () => {
+  const { report } = await runAttacks("vulnerable-vault.xray-demo", undefined, { custom: [DRAIN] });
+  assert.equal(report.results.length, 1, "custom scenarios replace the presets when no ids are given");
+  const r = report.results[0];
+  assert.equal(r.status, "broken");
+  assert.match(r.explanation, /^attacker.near walked away with \+67\.8015 NEAR\.$/);
+  assert.ok(r.event_sequence.some((e) => e.action.startsWith("Transfer") && e.to === "attacker.near"));
+});
+
+test("custom JSON: attacker tries to take over the clean vault → HELD (rejected)", { skip: !built && "runner not built" }, async () => {
+  const takeover = {
+    id: "custom:takeover",
+    name: "Attacker makes itself owner, then pauses",
+    steps: [
+      { op: "call", id: "own", as: "attacker", method: "set_owner", args: { owner_id: "attacker.near" }, attack: true },
+      { op: "call", id: "pause", as: "attacker", method: "set_paused", args: { paused: true }, attack: true },
+    ],
+    checks: [{ check: "unchanged", what: "state" }],
+    explain: { rejected: "Both admin calls were refused: {error.own}" },
+  };
+  const { report } = await runAttacks("clean-vault.xray-demo", undefined, { custom: [takeover] });
+  assert.equal(report.results[0].status, "held");
+  assert.equal(report.results[0].explanation, "Both admin calls were refused: panicked: only the owner can call this");
+});
+
+test("runner re-validates: a malformed scenario becomes an error result, the others still run", { skip: !built && "runner not built" }, async () => {
+  const { runSpec } = await import("./engine.js");
+  const { buildSpec, suggestAttacks } = await import("./attacks.js");
+  const { scanWithCode } = await import("./scan.js");
+  const { card } = await scanWithCode("vulnerable-vault.xray-demo");
+  const spec: any = buildSpec(card, "contracts/res/vulnerable_vault.wasm", suggestAttacks(card).slice(0, 1));
+  spec.scenarios.push({ id: "x", name: "x", steps: [{ op: "call", as: "mallory.near", method: "admin_drain" }] });
+  spec.scenarios.push({ id: "y", name: "y", steps: [{ op: "advance_blocks", blocks: 999999 }] });
+  const out = await runSpec<any>(spec);
+  assert.deepEqual(out.scenarios.map((s: any) => s.status), ["broken", "error", "error"]);
+  assert.match(out.scenarios[1].explanation, /unknown variant `mallory.near`/);
+  assert.match(out.scenarios[2].explanation, /advance_blocks must be 1-5000/);
+});
