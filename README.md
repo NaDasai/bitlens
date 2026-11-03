@@ -41,12 +41,21 @@ account id ─view_code RPC─▶ WASM ─▶ ① risk card ─▶ ② attacks i
 ### Steps (each with expected output)
 
 1. `npm install`
-2. `npm test` → `# pass 11`, `# fail 0` (account-id validation, capability detection, RPC errors against a fake RPC, attack selection, verdict rules; no network).
+2. `npm test` → `# pass 12`, `# fail 0` (account-id validation, capability detection, RPC errors and the offline fallback against a fake RPC, attack selection, verdict rules; no network).
 3. `npm run build:runner` (the first-build warning above applies) → ends with `Finished \`release\` profile [optimized]`; the binary is `runner/target/release/xray-runner`. You can skip this: the server and MCP server start the same build in the background if the binary is missing.
-4. `npm run attack -- vulnerable-vault.xray-demo` → 8 scenarios, `Summary: 6 held, 2 broken, 0 inconclusive`, `VERDICT: DANGEROUS`, exit code 3. Then `npm run attack -- clean-vault.xray-demo` → `7 held, 0 broken`, `VERDICT: SAFE`, exit code 0.
+4. `npm run test:sim` → `# pass 5`, ~2 s. Pins the status of **every** scenario on all four demo contracts, plus the risk level and verdict, through the real engine. If it passes, the demo tells the same story.
+   By hand: `npm run attack -- vulnerable-vault.xray-demo` → 8 scenarios, `Summary: 6 held, 2 broken, 0 inconclusive`, `VERDICT: DANGEROUS`, exit code 3; `npm run attack -- clean-vault.xray-demo` → `7 held, 0 broken`, `VERDICT: SAFE`, exit code 0.
 5. `npm run server` → `NEAR X-Ray backend on http://localhost:8787` and, a few seconds later, `[engine] attack engine ready`.
 6. Open **http://localhost:8787** and follow the demo path below.
-7. *Optional, live mainnet:* `npm run test:live` → `# pass 2` (scans wrap.near, token.sweat and aurora; checks each locally computed code hash against the RPC's; checks the `UNKNOWN_ACCOUNT` / `NO_CONTRACT_CODE` errors).
+7. **Before a live demo:** `npm run preflight` (~4 s) → a ✔/⚠/✘ checklist ending in `Ready to demo.`:
+   - Node version and runner build.
+   - All four demo verdicts.
+   - Live RPC for wrap.near / token.sweat / aurora. This also refreshes the offline copy of their code (see below).
+   - Port 8787 free.
+   - MCP server starts and lists 4 tools.
+
+   Exit code 1 if anything the demo needs is broken.
+8. *Optional, live mainnet:* `npm run test:live` → `# pass 2` (scans wrap.near, token.sweat and aurora; checks each locally computed code hash against the RPC's; checks the `UNKNOWN_ACCOUNT` / `NO_CONTRACT_CODE` errors).
 
 ### Demo path (web)
 1. Click **clean-vault** → green **LOW** card. In *Attack proof*, click **Run 7 attacks** → **SAFE**, all ✅ HELD (each one shows why: "only the owner can call this", "Method on_withdraw is private"…).
@@ -55,7 +64,12 @@ account id ─view_code RPC─▶ WASM ─▶ ① risk card ─▶ ② attacks i
    - ❌ `admin_drain`: attacker.near → contract `call admin_drain` ✓, contract → attacker.near `Transfer 67.8015 NEAR` ✓, net NEAR: `attacker.near +67.8015`, `vulnerable-vault.xray-demo −67.8015`.
    - ❌ double-withdraw: deposit 5 NEAR, two same-block withdraws, 10 NEAR back.
    - Each result has the receipt sequence and a collapsible full receipt trace from the sim.
-4. Paste `wrap.near` → real mainnet code, **LOW**; attacks → **SAFE** (3 held, 1 not applicable).
+4. Click **yield-escrow** → green **LOW** card: nothing in the bytecode looks dangerous. **Run 9 attacks** → **DANGEROUS**:
+   - ❌ stale yield: the user locks 5 NEAR in `request_payout` (block 16), nobody approves, the yield times out, and `on_payout_decision` runs at block 217 but never re-credits. The user's `withdraw` at block 220 fails, and 5 NEAR is stuck with no owner.
+   - **The scan alone would have passed it; the attack proves the bug.**
+5. Paste `wrap.near` → real mainnet code, **LOW**; attacks → **SAFE** (4 held, 1 not applicable).
+
+**Venue wifi down?** Every successful fetch saves the code to `.cache/code/` (gitignored). If every RPC endpoint is unreachable, X-Ray analyses that copy instead. The card says so in yellow ("⚠ RPC unreachable: showing the copy of this code fetched …"), `source` is `"cache"`, and MCP results carry an `offline_cache` note. Only *unreachable* falls back: "unknown account" / "no contract" answers from a live RPC are never masked. The four demo contracts never need the network.
 
 Links can be shared: `http://localhost:8787/?account=vulnerable-vault.xray-demo`.
 
@@ -68,14 +82,16 @@ Verified output (Nov 2026). Mainnet code is fetched read-only and attacked **onl
 | `clean-vault.xray-demo` | LOW | 7 held | **SAFE** |
 | `risky-vault.xray-demo` | HIGH: 🔴 redeploy (`upgrade`), 🔴 add full-access key (`add_full_access_key`) | 9 held (both are owner-gated) | **CAUTION** (powerful admin, correctly gated) |
 | `vulnerable-vault.xray-demo` | HIGH: `admin_drain` + can send NEAR | **2 broken** (drain, double-spend), 6 held | **DANGEROUS** |
-| `wrap.near` | LOW: 15 methods, NEP-141/145/148, sends NEAR via `near_withdraw`, 0 full-access keys | 3 held, 1 n/a | **SAFE** |
+| `yield-escrow.xray-demo` | LOW: sends NEAR, uses yield/resume; nothing dangerous-looking | **1 broken** (timeout strands 5 NEAR), 8 held | **DANGEROUS** |
+| `wrap.near` | LOW: 15 methods, NEP-141/145/148, sends NEAR via `near_withdraw`, 0 full-access keys | 4 held, 1 n/a | **SAFE** |
 | `token.sweat` | HIGH: 🔴 redeploy (`up_deploy_code`), 16 admin-looking `acl_*` methods | 15 inconclusive (could not initialise) | **CAUTION** |
 | `aurora` | HIGH: 🔴 add full-access key (`attach_full_access_key`), 🔴 redeploy (`upgrade`), 1 full-access key on the account | 20 inconclusive (could not initialise) | **CAUTION** |
 
-The three demo vaults (`contracts/*/src/lib.rs`, WASM committed in `contracts/res/`) share one interface (`deposit` / `withdraw(amount)` / `get_balance`):
+The four demo contracts (`contracts/*/src/lib.rs`, WASM committed in `contracts/res/`) share one interface (`deposit` / `withdraw(amount)` / `get_balance`):
 - **clean:** debits before paying out; a `#[private]` callback re-credits a failed payout; admin methods check the owner.
 - **risky:** clean, plus owner-only `upgrade` (redeploy) and `add_full_access_key`.
 - **vulnerable:** two planted bugs. `admin_drain` has no owner check, and `withdraw` debits only in its callback, so two withdraws in flight both pass.
+- **yield-escrow:** payouts wait for an approver via NEP-519 yield/resume (`request_payout` → `approve_payout` → `on_payout_decision`). Planted bug: on timeout, the callback logs "expired" but never re-credits. `cargo near build … --features fixed` builds the corrected contract, and every scenario, including the stale-yield one, is HELD on it (verified). So the template tells a correct timeout path from a broken one.
 
 ## MCP server (for AI agents)
 
@@ -164,7 +180,7 @@ Verdict: any BROKEN → **dangerous**. Otherwise **caution** if the card is not 
 | 3 | Double-spend before callback (`double_withdraw`) | deposit + withdraw methods, transfer, callbacks | deposit 5 NEAR, submit two withdraws in the same block, settle | total paid ≤ deposit |
 | 4 | Failed-transfer refund (`failed_transfer_refund`) | same | hold the payout receipt, the recipient deletes itself so the transfer really fails, recipient comes back and withdraws again | full 5 NEAR recoverable (N/A if no callback) |
 | 5 | Callback out-of-gas (`callback_gas`) | same | withdraw at 8-300 Tgas, then withdraw the rest at normal gas | paid + still withdrawable = deposit at every gas level |
-| 6 | Stale yield / timeout (`yield:<m>`) | `promise_yield_create` imported | start the yield, advance past its deadline without resuming | resolves cleanly, no stuck funds |
+| 6 | Stale yield / timeout (`yield:<m>`) | `promise_yield_create` imported + a `request`/`sign`/`wait`/`ask`-style method | with a deposit/withdraw pair: deposit 5 NEAR and request it; start the yield, never resume, advance past the deadline; then withdraw | no pending receipts or sim findings, and paid + withdrawable afterwards = 5 NEAR (control run first, as for 3-5) |
 
 Each result has: name, status (`held` / `broken` / `inconclusive` / `not_applicable` / `error`), a plain-English explanation, the receipt sequence (block, from → to, action, deposit, ok/failed), net NEAR per account, sim findings and the full receipt trace.
 
@@ -173,7 +189,7 @@ Each result has: name, status (`held` / `broken` / `inconclusive` / `not_applica
 - JSON-RPC `query`: `view_code` (deployed WASM + code hash) and `view_access_key_list` (full-access keys on the account). The base58 SHA-256 of the WASM is checked against the RPC's `hash`.
 - NEP standard detection: NEP-141/145/148/171/177/178/199/330, via near-contract-parser.
 - NEAR runtime host imports as a capability model: Promise batch actions, `promise_then`/`promise_result`, `promise_yield_create`/`resume`.
-- NEAR execution semantics, exercised in near-contract-sim: async receipts, callbacks and `#[private]`, 1-yoctoNEAR guards, NEP-145 storage, gas and refunds, `DeleteAccount`, yields, access keys, code hash.
+- NEAR execution semantics, exercised in near-contract-sim: async receipts, callbacks and `#[private]`, 1-yoctoNEAR guards, NEP-145 storage, gas and refunds, `DeleteAccount`, NEP-519 yield/resume timeouts (advancing the chain ~200 blocks past a yield's deadline), access keys, code hash.
 - near-sdk 5.29 demo contracts built with cargo-near.
 
 ## HTTP API and CLI
@@ -192,6 +208,7 @@ Environment:
 - `NEAR_RPC_URL`: comma-separated RPC URLs. Testnet works too.
 - `PORT`: default 8787.
 - `XRAY_RUNNER_BIN`: path to a prebuilt runner.
+- `XRAY_CACHE_DIR`: where the offline code copies go (default `.cache/code/`).
 - `HTTPS_PROXY` / `NO_PROXY`: honoured.
 
 ## Repo layout
@@ -203,8 +220,9 @@ mcp/        MCP front door (thin, stdio)
 cli/        scan / attack CLIs (thin)
 web/        static HTML/CSS/JS; all text rendered via textContent
 runner/     Rust attack runner over near-contract-sim (JSON in, JSON out)
-contracts/  clean / risky / vulnerable demo vaults (near-sdk 5.29) + res/*.wasm
-scripts/    mcp-smoke.ts, fetch-reference-wasm.sh
+contracts/  clean / risky / vulnerable / yield-escrow demo contracts (near-sdk 5.29) + res/*.wasm
+scripts/    preflight.ts (pre-demo checklist), mcp-smoke.ts, fetch-reference-wasm.sh
+.cache/     last fetched code per account, for the offline fallback (gitignored)
 ```
 
 ## Limitations (honest)
@@ -213,6 +231,7 @@ scripts/    mcp-smoke.ts, fetch-reference-wasm.sh
 - **Bytecode only, no source.** A present import means the code *can* reach an action, not that anyone can trigger it. Method-name heuristics are hints. An absent import is a proof.
 - **Arguments are guessed.** X-Ray cannot always build valid arguments or initialise complex contracts (aurora, token.sweat). It reports INCONCLUSIVE in those cases and never claims HELD from a rejection it cannot explain. A SAFE verdict means "the six templates found nothing", not "audited".
 - **Templates, not fuzzing.** Six scenario templates aimed at common NEAR bug classes, driven by the risk card. Logic bugs outside them (pricing, oracle, cross-contract token flows with real counterparties) are not tested. Other contracts the target calls are not deployed, so those calls fail in the sim.
-- **Yield scenario is the least exercised.** None of the demo contracts uses `promise_yield_create`, so template 6 is implemented but has not been run against a real yield contract yet.
+- **Yield detection needs a hint in the method name.** Template 6 picks methods named like `request`/`sign`/`wait`/`ask`. A yield started from a differently named method is not attacked. It is verified on yield-escrow, both the buggy and the fixed build.
+- **Offline cache is a last-known copy.** If the contract was redeployed since the cached fetch, a cached card describes the old code. The card shows the fetch time and block height.
 - **Fresh state.** The sim starts from a fresh `init`, not a copy of the contract's mainnet storage.
 - **First build is heavy** (see above). After that a full assessment takes ~0.2-1 s.

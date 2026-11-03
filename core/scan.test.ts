@@ -1,3 +1,6 @@
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, type Server } from "node:http";
@@ -102,6 +105,9 @@ before(async () => {
 });
 after(() => srv.close());
 
+// Keep the offline code cache out of the repo during tests.
+process.env.XRAY_CACHE_DIR = mkdtempSync(join(tmpdir(), "xray-cache-"));
+
 test("scan(): view_code → card, hash verified, keys counted", async () => {
   const card = await scan("vault.near", { rpcUrls: [rpcUrl] });
   assert.equal(card.source, "rpc");
@@ -116,4 +122,16 @@ test("scan(): UNKNOWN_ACCOUNT / NO_CONTRACT_CODE / unreachable RPC", async () =>
   await assert.rejects(scan("wallet.near", { rpcUrls: [rpcUrl] }), (e: any) => e instanceof RpcError && e.code === "NO_CONTRACT_CODE");
   await assert.rejects(scan("x.near", { rpcUrls: ["http://127.0.0.1:1"] }), (e: any) => e.code === "RPC_UNAVAILABLE");
   await assert.rejects(scan("NOT VALID"), /Invalid NEAR account id/);
+});
+
+test("scan(): RPC down → last fetched code, labelled as cache; other errors never fall back", async () => {
+  await scan("vault.near", { rpcUrls: [rpcUrl] }); // caches it
+  const card = await scan("vault.near", { rpcUrls: ["http://127.0.0.1:1"] });
+  assert.equal(card.source, "cache");
+  assert.ok(card.cached_at && !Number.isNaN(Date.parse(card.cached_at)));
+  assert.equal(card.block_height, 123);
+  assert.equal(card.code_hash_verified, true);
+  assert.deepEqual(card.methods, ["withdraw"]);
+  // Only "unreachable" falls back: a definitive answer from the RPC is never masked by the cache.
+  await assert.rejects(scan("ghost.near", { rpcUrls: [rpcUrl] }), (e: any) => e.code === "UNKNOWN_ACCOUNT");
 });

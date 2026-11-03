@@ -18,6 +18,10 @@ export const DEMO_CONTRACTS: Record<string, { file: string; description: string 
     file: "vulnerable_vault.wasm",
     description: "Planted bugs: admin_drain has no owner check; withdraw debits only in its callback (double-spend).",
   },
+  "yield-escrow.xray-demo": {
+    file: "yield_escrow.wasm",
+    description: "Payouts wait for an approver via yield/resume. Planted bug: a timed-out request is never re-credited (stuck NEAR). Scan says LOW; only the attack finds it.",
+  },
 };
 
 export const DEMO_DIR = fileURLToPath(new URL("../contracts/res/", import.meta.url));

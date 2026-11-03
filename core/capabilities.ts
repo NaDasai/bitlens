@@ -219,7 +219,7 @@ export function detectCapabilities(imports: WasmImport[], customMethods: string[
 /** The brief's list, plus a few high-signal additions (deploy, keys, roles, supply). */
 export const PRIVILEGED_PATTERNS = [
   "owner", "admin", "upgrade", "migrate", "set_", "withdraw", "drain", "pause", "self",
-  "deploy", "_key", "grant", "revoke", "mint", "burn",
+  "deploy", "_key", "grant", "revoke", "mint", "burn", "approve",
 ];
 
 
@@ -247,7 +247,7 @@ export function classifyMethods(methodNames: string[], byMethod: Record<string, 
     out.push({
       name,
       matched,
-      privileged: matched.length > 0,
+      privileged: matched.length > 0 || callback, // a callback reachable by anyone is an admin path
       note: callback
         ? "↩️ callback-looking method — must be #[private] (callable only by the contract itself)"
         : matched.length

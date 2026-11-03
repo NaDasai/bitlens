@@ -1,0 +1,15 @@
+[package]
+name = "yield_escrow"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+# The bug-free build, used only to check that X-Ray reports HELD on the fixed contract.
+fixed = []
+
+[dependencies]
+near-sdk = { workspace = true }

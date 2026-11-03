@@ -13,7 +13,7 @@ function render(card: RiskCard): string {
   L.push(`\n=== NEAR X-Ray risk card: ${card.account_id} ===`);
   L.push(card.summary);
   L.push(
-    `source: ${card.source}${card.rpc_url ? ` (${card.rpc_network} via ${card.rpc_url}, block ${card.block_height})` : ""}`,
+    `source: ${card.source}${card.cached_at ? ` (RPC unreachable; code fetched ${card.cached_at})` : ""}${card.rpc_url ? ` (${card.rpc_network} via ${card.rpc_url}, block ${card.block_height})` : ""}`,
   );
   L.push(`code_hash: ${card.code_hash}${card.code_hash_verified === null ? "" : card.code_hash_verified ? "  ✔ matches RPC" : "  ✘ MISMATCH vs RPC"}  (${card.code_size_bytes} bytes)`);
   L.push(`\nStandards: ${card.standards.length ? card.standards.map((s) => `${s.id} (${s.name})`).join(", ") : "none detected"}`);

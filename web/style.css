@@ -29,6 +29,7 @@ button { cursor: pointer; border-radius: 8px; border: 1px solid var(--line); bac
 .card-head .who { flex: 1; min-width: 0; }
 .card-head h2 { margin: 0; font: 600 20px var(--mono); word-break: break-all; }
 .meta { color: var(--muted); font-size: 12px; font-family: var(--mono); word-break: break-all; }
+.meta.cached { color: var(--yellow); }
 .badge { flex: none; padding: 6px 14px; border-radius: 999px; font-weight: 700; font-size: 13px; letter-spacing: .5px; }
 .badge.high { background: #3d1418; color: var(--red); border: 1px solid var(--red); }
 .badge.medium { background: #3a2a10; color: var(--yellow); border: 1px solid var(--yellow); }

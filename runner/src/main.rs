@@ -74,7 +74,16 @@ enum Kind {
     /// 5. Caller-chosen gas starves the callback: nothing may be lost or duplicated.
     CallbackGas { deposit_method: String, withdraw_method: String, amount_arg: String },
     /// 6. A yielded call is never resumed: the timeout path must resolve cleanly.
-    YieldTimeout { method: String, args: Value },
+    YieldTimeout {
+        method: String,
+        args: Value,
+        #[serde(default)]
+        deposit_method: Option<String>,
+        #[serde(default)]
+        withdraw_method: Option<String>,
+        #[serde(default)]
+        amount_arg: Option<String>,
+    },
 }
 
 #[derive(Serialize, Clone, Copy, PartialEq)]
@@ -333,7 +342,15 @@ fn run_scenario(world: &World, sc: &Scenario) -> ScenarioResult {
         Kind::CallbackGas { deposit_method, withdraw_method, amount_arg } => {
             callback_gas(&mut sim, &mut rec, c, deposit_method, withdraw_method, amount_arg)
         }
-        Kind::YieldTimeout { method, args } => yield_timeout(&mut sim, &mut rec, c, method, args),
+        Kind::YieldTimeout { method, args, deposit_method, withdraw_method, amount_arg } => yield_timeout(
+            &mut sim,
+            &mut rec,
+            c,
+            method,
+            args,
+            deposit_method.as_deref().zip(withdraw_method.as_deref()),
+            amount_arg.as_deref().unwrap_or("amount"),
+        ),
     };
     rec.finish(&sc.id, &sc.name, status, explanation, &sim, t0)
 }
@@ -624,26 +641,66 @@ fn callback_gas(sim: &mut Sim, rec: &mut Recorder, c: &str, dep: &str, wd: &str,
     }
 }
 
-/// 6. Stale yield: advance past the yield deadline; it must resolve cleanly.
-fn yield_timeout(sim: &mut Sim, rec: &mut Recorder, c: &str, method: &str, args: &Value) -> (Status, String) {
-    let h = sim.call(USER, c, method).args_json(args).deposit(Balance::from_yoctonear(0)).submit();
+/// 6. Stale yield: nobody resumes; advance past the deadline. The timeout path must
+///    resolve cleanly and, when the call locked user funds, give them back.
+fn yield_timeout(sim: &mut Sim, rec: &mut Recorder, c: &str, method: &str, args: &Value, flow: Option<(&str, &str)>, arg: &str) -> (Status, String) {
+    let d = 5 * YOCTO_PER_NEAR;
+    let mut args = args.clone();
+    // Fund the user and request exactly that amount, so we can check it comes back.
+    // The withdraw probe only counts if a plain deposit+withdraw works (control run).
+    let mut probe: Option<(&str, u128)> = None;
+    if let Some((dep, wd)) = flow {
+        if let Ok(y) = baseline(sim, USER, c, dep, wd, arg, d) {
+            if deposit(sim, rec, USER, c, dep, d).is_ok() {
+                args[arg] = json!(d.to_string());
+                probe = Some((wd, y));
+            }
+        }
+    }
+    let h = sim.call(USER, c, method).args_json(&args).submit();
     let _ = sim.run_until(10, |s| !s.yields().is_empty() || s.is_idle());
     let ys = sim.yields();
     if ys.is_empty() {
         sim.settle();
         rec.record(&format!("user.near calls {method}"), &sim.outcome(h));
-        return (Status::Inconclusive, format!("`{method}` did not yield with the arguments we could build, so the timeout path was not exercised."));
+        return (Status::Inconclusive, format!("`{method}` did not yield with the arguments we could build ({}), so the timeout path was not exercised.", panic_text(&sim.outcome(h))));
     }
     let deadline = ys[0].expires_at;
     sim.advance_to(deadline);
     sim.settle();
     let o = sim.outcome(h);
-    rec.record(&format!("user.near calls {method}; nobody resumes; clock advanced past block {deadline}"), &o);
+    let locked = if probe.is_some() { format!(" for {} NEAR", fmt_near(d)) } else { String::new() };
+    rec.record(&format!("user.near calls {method}{locked}; nobody resumes; clock advanced past the yield deadline (block {deadline})"), &o);
     let findings = sim.findings();
     if !o.is_complete() || !findings.is_empty() {
-        (Status::Broken, format!("After the yield deadline the call did not resolve cleanly: {} pending receipt(s), {} finding(s).", o.pending.len(), findings.len()))
+        return (
+            Status::Broken,
+            format!("After the yield deadline `{method}` did not resolve cleanly: {} pending receipt(s), {} finding(s).", o.pending.len(), findings.len()),
+        );
+    }
+    let Some((wd, y)) = probe else {
+        return (Status::Held, "The yield timed out at its deadline and the timeout path resolved cleanly (no stuck receipts, no unhandled failures).".into());
+    };
+    let paid_during = paid_to(&o, USER);
+    let retry = sim.call(USER, c, wd).args_json(amount_args(arg, d)).deposit(Balance::from_yoctonear(y)).transact();
+    rec.record(&format!("user.near tries to withdraw its {} NEAR after the timeout", fmt_near(d)), &retry);
+    let total = paid_during + if retry.is_success() { paid_to(&retry, USER) + y } else { 0 };
+    if total.abs_diff(d) <= TOL {
+        (
+            Status::Held,
+            format!("Nobody answered `{method}` before the yield deadline; the timeout path ran cleanly and the user got all {} NEAR back.", fmt_near(d)),
+        )
     } else {
-        (Status::Held, "The yield timed out at its deadline and the timeout path resolved cleanly (no stuck receipts, no unhandled failures, NEAR conserved).".into())
+        (
+            Status::Broken,
+            format!(
+                "Stuck funds: user.near locked {} NEAR in `{method}` and nobody answered before the yield deadline (block {deadline}). The timeout callback ran but neither paid out nor re-credited it: the user can recover {} NEAR ({}). {} NEAR is stuck in the contract with no owner.",
+                fmt_near(d),
+                fmt_near(total),
+                if retry.is_success() { "withdraw paid the rest".to_string() } else { format!("`{wd}` says: {}", panic_text(&retry)) },
+                fmt_near(d - total.min(d))
+            ),
+        )
     }
 }
 

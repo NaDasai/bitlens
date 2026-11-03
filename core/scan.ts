@@ -19,7 +19,8 @@ import {
   type WasmImport,
 } from "./capabilities.js";
 import { isDemoAccount, readDemoWasm } from "./demo.js";
-import { networkOf, RpcError, viewAccessKeyList, viewCode, type RpcOptions } from "./rpc.js";
+import { loadCachedCode, saveCachedCode } from "./codeCache.js";
+import { networkOf, RpcError, rpcUrlsFrom, viewAccessKeyList, viewCode, type RpcOptions } from "./rpc.js";
 
 export interface Standard {
   id: string;
@@ -37,7 +38,10 @@ export interface AccessKeySummary {
 
 export interface RiskCard {
   account_id: string;
-  source: "rpc" | "file" | "demo";
+  /** "cache": the RPC was unreachable and this is the last code fetched from it (see cached_at). */
+  source: "rpc" | "file" | "demo" | "cache";
+  /** ISO time the cached code was fetched; null unless source is "cache". */
+  cached_at: string | null;
   rpc_network: string | null;
   rpc_url: string | null;
   block_height: number | null;
@@ -133,7 +137,8 @@ function summarize(card: Omit<RiskCard, "summary">): string {
 
 export interface ScanWasmMeta {
   accountId: string;
-  source: "rpc" | "file" | "demo";
+  source: "rpc" | "file" | "demo" | "cache";
+  cachedAt?: string | null;
   rpcUrl?: string | null;
   blockHeight?: number | null;
   rpcHash?: string | null;
@@ -165,6 +170,7 @@ export async function scanWasm(wasm: Uint8Array, meta: ScanWasmMeta): Promise<Ri
   const card: Omit<RiskCard, "summary"> = {
     account_id: meta.accountId,
     source: meta.source,
+    cached_at: meta.cachedAt ?? null,
     rpc_network: meta.rpcUrl ? networkOf(meta.rpcUrl) : null,
     rpc_url: meta.rpcUrl ?? null,
     block_height: meta.blockHeight ?? null,
@@ -221,8 +227,34 @@ export async function scanWithCode(accountId: string, opts?: RpcOptions): Promis
     const wasm = await readDemoWasm(id);
     return { card: await scanWasm(wasm, { accountId: id, source: "demo" }), wasm };
   }
-  const code = await fetchCode(id, opts);
+  const network = networkOf(rpcUrlsFrom(opts)[0] ?? "");
+  let code: FetchedCode;
+  try {
+    code = await fetchCode(id, opts);
+  } catch (e) {
+    // Every RPC endpoint is down: fall back to the last code we fetched, clearly labelled.
+    const cached = e instanceof RpcError && e.code === "RPC_UNAVAILABLE" ? await loadCachedCode(network, id) : null;
+    if (!cached) throw e;
+    const card = await scanWasm(cached.wasm, {
+      accountId: id,
+      source: "cache",
+      cachedAt: cached.fetched_at,
+      rpcUrl: cached.rpc_url,
+      blockHeight: cached.block_height,
+      rpcHash: cached.rpc_hash,
+      accessKeys: cached.access_keys,
+    });
+    return { card, wasm: cached.wasm };
+  }
   const accessKeys = await fetchKeySummary(code.accountId, { ...opts, rpcUrls: [code.rpcUrl] });
+  await saveCachedCode(networkOf(code.rpcUrl), id, {
+    wasm: code.wasm,
+    rpc_url: code.rpcUrl,
+    rpc_hash: code.rpcHash,
+    block_height: code.blockHeight,
+    fetched_at: new Date().toISOString(),
+    access_keys: accessKeys,
+  });
   const card = await scanWasm(code.wasm, {
     accountId: code.accountId,
     source: "rpc",

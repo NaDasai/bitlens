@@ -71,8 +71,11 @@ function renderCard(c) {
       h(
         "div",
         { class: "meta" },
-        c.source === "demo" ? "built-in demo contract (local WASM, no RPC)" : `${c.rpc_network ?? c.source} · block ${c.block_height ?? "–"} · ${(c.code_size_bytes / 1024).toFixed(0)} KiB`,
+        c.source === "demo"
+          ? "built-in demo contract (local WASM, no RPC)"
+          : `${c.rpc_network ?? c.source} · block ${c.block_height ?? "–"} · ${(c.code_size_bytes / 1024).toFixed(0)} KiB`,
       ),
+      c.source === "cache" && h("div", { class: "meta cached" }, `⚠ RPC unreachable: showing the copy of this code fetched ${new Date(c.cached_at).toLocaleString()}`),
       h("div", { class: "meta" }, `code hash ${c.code_hash}${verified}`),
     ),
     h("div", { class: `badge ${c.risk.level}` }, `${c.risk.level.toUpperCase()} RISK`),

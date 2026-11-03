@@ -53,6 +53,7 @@ function cardForAgent(card: RiskCard) {
   return {
     account_id: card.account_id,
     rpc_network: card.rpc_network ?? card.source,
+    ...(card.cached_at ? { offline_cache: `RPC unreachable: analysed the last fetched copy of this code (${card.cached_at}, block ${card.block_height})` } : {}),
     code_hash: card.code_hash,
     code_hash_verified: card.code_hash_verified,
     risk_level: card.risk.level,

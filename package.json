@@ -16,7 +16,9 @@
     "test:live": "XRAY_LIVE=1 tsx --test core/live.test.ts",
     "attack": "tsx cli/attack.ts",
     "build:runner": "cd runner && cargo build --release --locked",
-    "mcp": "tsx mcp/server.ts"
+    "mcp": "tsx mcp/server.ts",
+    "test:sim": "tsx --test core/sim.test.ts",
+    "preflight": "tsx scripts/preflight.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",

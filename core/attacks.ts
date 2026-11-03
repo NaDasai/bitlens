@@ -89,6 +89,7 @@ export function kitchenSinkArgs(who: string): Record<string, unknown> {
   const ids = [
     "account_id", "receiver_id", "owner_id", "new_owner_id", "new_owner", "owner", "to", "recipient", "recipient_id",
     "beneficiary_id", "admin", "admin_id", "new_admin", "user", "user_id", "sender_id", "predecessor_id", "address",
+    "approver_id", "operator_id",
   ];
   const args: Record<string, unknown> = Object.fromEntries(ids.map((k) => [k, who]));
   Object.assign(args, {
@@ -102,6 +103,8 @@ export function kitchenSinkArgs(who: string): Record<string, unknown> {
     code: TINY_WASM_B64,
     msg: "",
     memo: null,
+    request_id: 0,
+    approved: true,
   });
   return args;
 }
@@ -199,17 +202,21 @@ export function suggestAttacks(card: RiskCard): AttackScenario[] {
     }
   }
 
-  // 6. Stale yield / timeout.
+  // 6. Stale yield / timeout. With a deposit/withdraw pair the user is funded first,
+  // so the runner can check the timed-out request's NEAR comes back.
   if (has(card, "yield_resume")) {
+    const flow = dep && wd ? { deposit_method: dep, withdraw_method: wd, amount_arg: "amount" } : {};
     const candidates = custom(card).filter((m) => !VIEW_RE.test(m) && !CALLBACK_RE.test(m) && /request|yield|sign|wait|ask/.test(m));
     for (const m of candidates.slice(0, 3)) {
       out.push({
         id: `yield:${m}`,
         name: `Stale yield / timeout in ${m}`,
         kind: "yield_timeout",
-        checks: `Call \`${m}\`, never resume it, advance the clock past the yield deadline; it must resolve cleanly.`,
+        checks: dep && wd
+          ? `Deposit 5 NEAR, call \`${m}\` for it, never resume, advance past the yield deadline; the timeout must resolve cleanly and the 5 NEAR must come back.`
+          : `Call \`${m}\`, never resume it, advance the clock past the yield deadline; it must resolve cleanly.`,
         target_method: m,
-        params: { method: m, args: kitchenSinkArgs(SIM_ACCOUNTS.user) },
+        params: { method: m, args: kitchenSinkArgs(SIM_ACCOUNTS.user), ...flow },
       });
     }
   }
