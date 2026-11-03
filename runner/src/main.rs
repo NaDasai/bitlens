@@ -155,6 +155,16 @@ impl Recorder {
     }
 
     fn record(&mut self, step: &str, out: &TxOutcome) {
+        self.record_inner(step, out, true);
+    }
+
+    /// Show the step in the sequence and trace, but keep it out of the net NEAR
+    /// figures (test-harness moves such as an account deleting itself).
+    fn record_setup(&mut self, step: &str, out: &TxOutcome) {
+        self.record_inner(step, out, false);
+    }
+
+    fn record_inner(&mut self, step: &str, out: &TxOutcome, count: bool) {
         for r in &out.receipts {
             if r.refund.is_some() {
                 continue; // gas / deposit refunds are not value movement worth showing
@@ -179,7 +189,7 @@ impl Recorder {
             });
         }
         let e = out.effects();
-        for who in &self.watch {
+        for who in self.watch.iter().filter(|_| count) {
             let d = e.near_net(who.as_str());
             let cur = self.nets.entry(who.clone()).or_insert(Delta::ZERO);
             *cur = cur.checked_add(d).unwrap_or(*cur);
@@ -387,7 +397,7 @@ fn deposit(sim: &mut Sim, rec: &mut Recorder, who: &str, c: &str, method: &str, 
     // Contracts without storage_deposit just fail this harmlessly; not recorded.
     let reg = sim.call(who, c, "storage_deposit").args_json(json!({ "account_id": who })).deposit(Balance::from_yoctonear(YOCTO_PER_NEAR / 10)).transact();
     if reg.is_success() {
-        rec.record(&format!("{who} registers storage (0.1 NEAR)"), &reg);
+        rec.record_setup(&format!("{who} registers storage (0.1 NEAR)"), &reg);
     }
     let out = sim.call(who, c, method).args_json(json!({})).deposit(Balance::from_yoctonear(amount)).transact();
     rec.record(&format!("{who} deposits {} NEAR", fmt_near(amount)), &out);
@@ -500,7 +510,7 @@ fn failed_transfer_refund(sim: &mut Sim, rec: &mut Recorder, c: &str, dep: &str,
     let h = sim.call(USER, c, wd).args_json(amount_args(arg, d)).deposit(Balance::from_yoctonear(y)).inject(Receipts::action("Transfer"), Fault::Hold(4)).submit();
     let _ = sim.run_until(20, |s| s.outcome(h).receipt(wd).is_some());
     let del = sim.tx(USER, USER).action(Action::DeleteAccount(DeleteAccountAction { beneficiary_id: OWNER.parse().unwrap() })).transact();
-    rec.record("user.near deletes its account while the payout is in flight", &del);
+    rec.record_setup("user.near deletes its account while the payout is in flight (test harness)", &del);
     sim.settle();
     let o = sim.outcome(h);
     rec.record(&format!("user.near withdraws {} NEAR (payout held, then fails)", fmt_near(d)), &o);
@@ -565,7 +575,20 @@ fn callback_gas(sim: &mut Sim, rec: &mut Recorder, c: &str, dep: &str, wd: &str,
             broken = Some((tg, total, first, probe));
         }
     }
-    let joined = summary.join("; ");
+    // Compress runs of identical outcomes: "8-25 Tgas: refused, 5.0000 NEAR recoverable".
+    let mut runs: Vec<(u64, u64, String)> = vec![];
+    for (tg, line) in points.iter().zip(&summary) {
+        let what = line.split_once(": ").map(|(_, w)| w.to_string()).unwrap_or_default();
+        match runs.last_mut() {
+            Some((_, hi, w)) if *w == what => *hi = *tg,
+            _ => runs.push((*tg, *tg, what)),
+        }
+    }
+    let joined = runs
+        .iter()
+        .map(|(lo, hi, w)| if lo == hi { format!("{lo} Tgas: {w}") } else { format!("{lo}-{hi} Tgas: {w}") })
+        .collect::<Vec<_>>()
+        .join("; ");
     match broken {
         Some((tg, total, first, probe)) => {
             rec.record(&format!("user.near withdraws with {tg} Tgas"), &first);
@@ -585,6 +608,8 @@ fn callback_gas(sim: &mut Sim, rec: &mut Recorder, c: &str, dep: &str, wd: &str,
             let mut s = sim.clone();
             let first = s.call(USER, c, wd).args_json(amount_args(arg, d)).deposit(Balance::from_yoctonear(y)).gas(Gas::from_teragas(points[0])).transact();
             rec.record(&format!("user.near withdraws with {} Tgas (lowest point)", points[0]), &first);
+            let probe = s.call(USER, c, wd).args_json(amount_args(arg, d)).deposit(Balance::from_yoctonear(y)).transact();
+            rec.record("user.near withdraws the rest with normal gas", &probe);
             (Status::Held, format!("At every caller gas from {} to {} Tgas the user could recover exactly {} NEAR. No half-applied state. Sweep: {joined}", points[0], points[points.len() - 1], fmt_near(d)))
         }
     }

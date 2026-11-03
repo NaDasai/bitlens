@@ -109,7 +109,8 @@ h2.plain { font-family: system-ui, sans-serif; }
 .events .blk { color: var(--muted); margin-right: 6px; font-family: var(--mono); }
 .events .amt { color: var(--yellow); font-weight: 600; }
 .deltas { font-size: 13px; margin-top: 4px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-.delta { font-family: var(--mono); font-size: 12px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); }
+.delta { font-family: var(--mono); font-size: 12px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
+@media (max-width: 480px) { .delta { font-size: 10.5px; padding: 1px 6px; white-space: normal; overflow-wrap: anywhere; border-radius: 8px; } }
 .delta.pos { color: var(--green); } .delta.neg { color: var(--red); }
 pre.trace { font: 11.5px/1.45 var(--mono); background: #0d1117; border: 1px solid var(--line); border-radius: 8px; padding: 10px; overflow-x: auto; max-height: 420px; color: var(--muted); }
 @media (max-width: 560px) { .verdict { flex-direction: column; } .pill { max-width: 100%; } }
