@@ -24,4 +24,4 @@ export { startWarmup, engineStatus, warmReady, runSpec, EngineNotReadyError, RUN
 export { scanWithCode, base58 } from "./scan.js";
 export { validateScenario, fillPreset, scenarioMethods, PRESETS, ScenarioError, scenarioSchema, type Scenario } from "./scenario.js";
 export { translateToScenario, type Translation } from "./speech.js";
-export { nearAiStatus, nearAiConfig, transcribe, chatJson, DEFAULT_NEAR_AI_MODEL } from "./nearai.js";
+export { llmStatus, llmProviders, chatJson, resetLlmCooldown, DEFAULT_NEAR_AI_MODEL, DEFAULT_OPEN_ROUTER_MODEL } from "./llm.js";

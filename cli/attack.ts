@@ -5,7 +5,7 @@
  *   npm run attack -- <account> --only unauth:admin_drain,double_withdraw
  *   npm run attack -- <account> --scenario my-attack.json    # run your own scenario JSON
  *   npm run attack -- <account> --say "the attacker calls admin_drain and keeps the money"
- *                                   # English → scenario JSON via NEAR AI Cloud (NEAR_AI_API_KEY)
+ *                                   # English → scenario JSON via the LLM (NEAR AI Cloud, fallback OpenRouter)
  *   add --json for the raw report, --trace for full receipt trees,
  *   --print-scenario to print the scenario JSON (with --list: every preset's JSON)
  */
@@ -36,9 +36,9 @@ async function main() {
     let custom: unknown[] | undefined;
     if (opt("--scenario")) custom = [JSON.parse(await readFile(opt("--scenario")!, "utf8"))];
     if (opt("--say")) {
-      console.error(`Translating with NEAR AI Cloud…`);
+      console.error(`Translating into scenario JSON…`);
       const t = await translateToScenario(opt("--say"), await scan(id));
-      console.error(`  ${t.model}, ${t.attempts} attempt(s)`);
+      console.error(`  ${t.provider}, ${t.model}, ${t.attempts} attempt(s)${t.fallback_from ? ` (fallback: ${t.fallback_from.join("; ")})` : ""}`);
       custom = [t.scenario];
     }
     if (custom && printScenario) console.log(JSON.stringify(custom[0], null, 2));

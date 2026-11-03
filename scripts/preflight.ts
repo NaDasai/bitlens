@@ -8,7 +8,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { DEMO_CONTRACTS, nearAiStatus, RUNNER_BIN, runAttacks, scan, verdictOf } from "../core/index.js";
+import { DEMO_CONTRACTS, llmStatus, RUNNER_BIN, runAttacks, scan, verdictOf } from "../core/index.js";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const PORT = Number(process.env.PORT ?? 8787);
@@ -60,10 +60,11 @@ for (const id of ["wrap.near", "token.sweat", "aurora"]) {
 }
 
 // 4. Speech-to-test (optional)
-const ai = nearAiStatus();
+const ai = llmStatus();
+const chain = ai.providers.map((p) => `${p.name} ${p.configured ? `✓ (${p.model})` : "no key"}`).join(" → ");
 ai.configured
-  ? ok(`speech-to-test: NEAR AI Cloud key set (model ${ai.model}, speech ${ai.stt_model})`)
-  : warn("speech-to-test: NEAR_AI_API_KEY not set; the custom-attack box accepts hand-written scenario JSON only");
+  ? ok(`speech-to-test: ${chain}`)
+  : warn("speech-to-test: no LLM key (set NEAR_AI_API_KEY and/or OPEN_ROUTER_KEY); the custom-attack box accepts hand-written scenario JSON only");
 
 // 5. Web server port
 try {

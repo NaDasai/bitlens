@@ -221,7 +221,7 @@ async function loadAttacks(accountId) {
     h("div", { class: "who" }, h("h2", { class: "plain" }, "Attack proof"), h("div", { class: "meta" }, "Runs the real bytecode in near-contract-sim (local nearcore runtime). Nothing is sent to any network.")),
     enginePill(st),
   );
-  const ai = await nearAiState();
+  const ai = await llmState();
   if (accountId !== current) return;
   if (!list.length) {
     attacksEl.replaceChildren(
@@ -340,12 +340,12 @@ function renderResults(body, el) {
 }
 
 // ---------------------------------------------------------------------------
-// Speech-to-test: plain English (typed or spoken) → scenario JSON → runner
+// Speech-to-test: a typed plain-English sentence → scenario JSON → runner
 // ---------------------------------------------------------------------------
 
-async function nearAiState() {
+async function llmState() {
   try {
-    return await (await fetch("/nearai")).json();
+    return await (await fetch("/llm")).json();
   } catch {
     return { configured: false };
   }
@@ -363,10 +363,8 @@ function customBlock(accountId, presets, ai) {
   const json = h("textarea", { id: "scenario-json", rows: "12", spellcheck: "false", placeholder: '{ "id": "custom:...", "name": "...", "steps": [ ... ], "checks": [ ... ] }' });
   const note = h("div", { class: "meta custom-note" });
   const out = h("div", { id: "custom-results" });
-  const translate = h("button", { type: "button", class: "secondary", disabled: ai.configured ? false : "disabled" }, "Translate with NEAR AI");
+  const translate = h("button", { type: "button", class: "secondary", disabled: ai.configured ? false : "disabled" }, "Translate to a test");
   const runBtn = h("button", { id: "run-custom", type: "button" }, "Run this scenario");
-  const canRecord = ai.configured && navigator.mediaDevices?.getUserMedia && window.MediaRecorder;
-  const mic = canRecord ? h("button", { type: "button", class: "secondary mic", title: "Speak your attack (transcribed by Whisper on NEAR AI Cloud)" }, "🎤 Speak") : null;
   const pick = h(
     "select",
     { "aria-label": "Start from a preset" },
@@ -384,12 +382,13 @@ function customBlock(accountId, presets, ai) {
     const sentence = say.value.trim();
     if (!sentence) return status("Describe the attack first.", "warn");
     translate.disabled = true;
-    status(`NEAR AI Cloud (${ai.model}) is writing the scenario JSON…`);
+    status(`${ai.provider} (${ai.model}) is writing the scenario JSON…`);
     try {
       const t = await postJson("/translate", { account_id: accountId, sentence });
       if (accountId !== current) return;
       json.value = JSON.stringify(t.scenario, null, 2);
-      status(`Translated by ${t.model}${t.attempts > 1 ? ` (${t.attempts} attempts)` : ""}. Check the JSON, edit if you like, then run it.`, "ok");
+      const via = t.fallback_from ? ` (fallback: ${t.fallback_from.join("; ")})` : "";
+      status(`Translated by ${t.provider} (${t.model})${t.attempts > 1 ? `, ${t.attempts} attempts` : ""}${via}. Check the JSON, edit if you like, then run it.`, t.fallback_from ? "warn" : "ok");
     } catch (e) {
       status(e.message, "warn");
     } finally {
@@ -397,39 +396,8 @@ function customBlock(accountId, presets, ai) {
     }
   }
   translate.addEventListener("click", doTranslate);
-
-  let rec = null;
-  mic?.addEventListener("click", async () => {
-    if (rec) return rec.stop();
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const chunks = [];
-      rec = new MediaRecorder(stream);
-      rec.ondataavailable = (ev) => chunks.push(ev.data);
-      rec.onstop = async () => {
-        stream.getTracks().forEach((t) => t.stop());
-        rec = null;
-        mic.textContent = "🎤 Speak";
-        mic.classList.remove("recording");
-        const blob = new Blob(chunks, { type: chunks[0]?.type || "audio/webm" });
-        status("Transcribing with Whisper on NEAR AI Cloud…");
-        try {
-          const res = await fetch("/transcribe", { method: "POST", headers: { "content-type": blob.type.split(";")[0] || "audio/webm" }, body: blob });
-          const body = await res.json();
-          if (!res.ok) throw new Error(`${body.error?.code}: ${body.error?.message}`);
-          say.value = body.text;
-          await doTranslate();
-        } catch (e) {
-          status(e.message, "warn");
-        }
-      };
-      rec.start();
-      mic.textContent = "■ Stop";
-      mic.classList.add("recording");
-      status("Recording… click Stop when done.");
-    } catch (e) {
-      status(`Microphone unavailable: ${e.message}`, "warn");
-    }
+  say.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey)) doTranslate();
   });
 
   runBtn.addEventListener("click", () => {
@@ -445,15 +413,15 @@ function customBlock(accountId, presets, ai) {
 
   status(
     ai.configured
-      ? `Describe an attack (or speak it). NEAR AI Cloud (${ai.model}) translates it into scenario JSON; the same runner as the presets executes it in the local sim.`
-      : "Speech-to-test is off: the server has no NEAR_AI_API_KEY. You can still write or paste scenario JSON (start from a preset), and run it.",
+      ? `Describe an attack in plain English. ${ai.provider} (${ai.model}) translates it into scenario JSON; the same runner as the presets executes it in the local sim.`
+      : "Speech-to-test is off: the server has no LLM key (NEAR_AI_API_KEY or OPEN_ROUTER_KEY). You can still write or paste scenario JSON (start from a preset), and run it.",
   );
   return h(
     "div",
     { class: "block custom" },
     h("h3", {}, "Your own attack (speech-to-test)"),
     note,
-    h("div", { class: "say-row" }, say, h("div", { class: "say-btns" }, mic, translate)),
+    h("div", { class: "say-row" }, say, h("div", { class: "say-btns" }, translate)),
     h("div", { class: "json-head" }, h("span", { class: "meta" }, "Scenario JSON (what the runner executes)"), pick),
     json,
     h("div", { class: "actions" }, runBtn),

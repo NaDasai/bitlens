@@ -223,7 +223,7 @@ server.registerTool(
   {
     title: "Test your own attack idea against a NEAR contract",
     description:
-      "Turn an attack idea into a test and run it on the contract's real bytecode in the LOCAL simulator. Give EITHER `description` (plain English, e.g. \"the attacker calls admin_drain and keeps the money\"; NEAR AI Cloud translates it into scenario JSON; the server needs NEAR_AI_API_KEY) OR `scenario` (scenario JSON you wrote yourself). " +
+      "Turn an attack idea into a test and run it on the contract's real bytecode in the LOCAL simulator. Give EITHER `description` (plain English, e.g. \"the attacker calls admin_drain and keeps the money\"; an LLM translates it into scenario JSON: NEAR AI Cloud, falling back to OpenRouter; the server needs NEAR_AI_API_KEY or OPEN_ROUTER_KEY) OR `scenario` (scenario JSON you wrote yourself). " +
       'Scenario JSON: {"id","name","steps":[...],"checks":[...]}. Steps ("op"): call {as: owner|victim|attacker|user, method, args, deposit_near, async, attack:true for the call under test}, deposit {as, method, near}, settle, advance_blocks {blocks}, wait_for_yield, advance_past_yield, sweep. ' +
       'Checks ("check"), first failure decides: net_at_most|net_at_least|net_equals {account: role|contract, near}, unchanged {what: code|keys|state}, step_succeeded|step_failed {step}. ' +
       "Call list_attacks with include_scenarios for complete examples. Returns the scenario that ran and its result (held / broken / inconclusive). dry_run: only translate. Never sends transactions to any network.",
@@ -244,7 +244,7 @@ server.registerTool(
       if (description) {
         const t = await translateToScenario(description, await scan(id));
         sc = t.scenario;
-        translatedBy = `NEAR AI Cloud (${t.model})`;
+        translatedBy = `${t.provider} (${t.model})`;
       }
       if (dry_run) return ok(`Scenario for ${id}${translatedBy ? ` (translated by ${translatedBy})` : ""}; not run.`, { account_id: id, scenario: sc as Record<string, unknown>, translated_by: translatedBy ?? null });
       if (!warmReady()) throw engineNotReady();

@@ -7,9 +7,8 @@
  *   POST /attack {"account_id","scenario_ids"?}   run them in near-contract-sim
  *   GET  /engine                     attack-engine warm-up status
  *   POST /attack {"account_id","scenarios":[…]}  run custom scenario JSON instead
- *   POST /translate {"account_id","sentence"}    English → scenario JSON (NEAR AI Cloud)
- *   POST /transcribe  (audio body)               speech → text (Whisper on NEAR AI Cloud)
- *   GET  /nearai                     speech-to-test configuration (never the key)
+ *   POST /translate {"account_id","sentence"}    English → scenario JSON (NEAR AI Cloud, fallback OpenRouter)
+ *   GET  /llm                        speech-to-test LLM configuration (never the key)
  *   GET  /       static web UI (web/)
  */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
@@ -18,9 +17,8 @@ import { extname, join, normalize, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   InputError,
-  nearAiStatus,
+  llmStatus,
   scan as scanCard,
-  transcribe,
   translateToScenario,
   engineStatus,
   EngineNotReadyError,
@@ -61,17 +59,6 @@ async function readJson(req: IncomingMessage): Promise<any> {
   }
 }
 
-async function readBytes(req: IncomingMessage, max: number): Promise<Uint8Array> {
-  const chunks: Buffer[] = [];
-  let n = 0;
-  for await (const chunk of req as AsyncIterable<Buffer>) {
-    n += chunk.length;
-    if (n > max) throw new InputError(`request body larger than ${max / 1024 / 1024} MB`);
-    chunks.push(chunk);
-  }
-  return new Uint8Array(Buffer.concat(chunks));
-}
-
 async function serveStatic(pathname: string, res: ServerResponse) {
   const rel = normalize(pathname === "/" ? "/index.html" : pathname).replace(/^(\.\.[/\\])+/, "");
   const file = join(WEB_DIR, rel);
@@ -99,20 +86,13 @@ export const server = createServer(async (req, res) => {
 
     if (url.pathname === "/engine") return sendJson(res, 200, engineStatus());
 
-    if (url.pathname === "/nearai") return sendJson(res, 200, nearAiStatus());
+    if (url.pathname === "/llm") return sendJson(res, 200, llmStatus());
 
     if (url.pathname === "/translate" && req.method === "POST") {
       const body = await readJson(req);
       const card = await scanCard(body.account_id); // validates account_id
       const t = await translateToScenario(body.sentence, card);
       return sendJson(res, 200, { account_id: card.account_id, ...t });
-    }
-
-    if (url.pathname === "/transcribe" && req.method === "POST") {
-      const mime = String(req.headers["content-type"] ?? "").split(";")[0];
-      if (!/^audio\//.test(mime)) throw new InputError("POST the recording as the body with an audio/* content-type");
-      const audio = await readBytes(req, 8 * 1024 * 1024);
-      return sendJson(res, 200, await transcribe(audio, mime));
     }
 
     if (url.pathname === "/attacks") {

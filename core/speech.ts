@@ -1,14 +1,15 @@
 /**
- * Speech-to-test: plain English → scenario JSON → the same runner as the presets.
+ * Speech-to-test: a typed plain-English sentence → scenario JSON → the same
+ * runner as the presets.
  *
- * The LLM (NEAR AI Cloud, JSON mode) has one job: translate a sentence into a
+ * The LLM (NEAR AI Cloud, falling back to OpenRouter; JSON mode) has one job: translate a sentence into a
  * valid scenario object for THIS contract. It never writes code. Its output is
  * untrusted: it is validated against the scenario schema, its method names are
  * checked against the contract's real exports, and the runner validates and
  * bounds it again before executing anything in the local sim.
  */
 import { InputError } from "./errors.js";
-import { chatJson, type ChatMessage } from "./nearai.js";
+import { chatJson, type ChatMessage } from "./llm.js";
 import type { RiskCard } from "./scan.js";
 import { suggestAttacks } from "./attacks.js";
 import { ScenarioError, scenarioMethods, validateScenario, type Scenario } from "./scenario.js";
@@ -106,10 +107,13 @@ function finalise(raw: unknown, sentence: string, card: RiskCard): Scenario {
 export interface Translation {
   scenario: Scenario;
   model: string;
+  provider: string;
   attempts: number;
+  /** Set when the primary provider failed and another one answered. */
+  fallback_from?: string[];
 }
 
-/** Plain-English sentence → validated scenario JSON for this contract (NEAR AI Cloud). */
+/** Plain-English sentence → validated scenario JSON for this contract. */
 export async function translateToScenario(sentence: unknown, card: RiskCard): Promise<Translation> {
   if (typeof sentence !== "string" || sentence.trim().length < 3) throw new InputError("Describe the attack in a sentence (3-1000 characters).");
   const text = sentence.trim().slice(0, 1000);
@@ -122,12 +126,17 @@ export async function translateToScenario(sentence: unknown, card: RiskCard): Pr
   ];
   let lastError = "";
   let model = "";
+  let provider = "";
+  let fallback: string[] | undefined;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    const res = await chatJson(messages);
+    // The repair round stays on the provider that answered the first time.
+    const res = await chatJson(messages, { prefer: provider || undefined });
     model = res.model;
+    provider = res.provider;
+    fallback ??= res.fallback_from;
     try {
       if (res.json === null) throw new ScenarioError("Invalid scenario: the reply was not a JSON object");
-      return { scenario: finalise(res.json, text, card), model, attempts: attempt };
+      return { scenario: finalise(res.json, text, card), model, provider, attempts: attempt, ...(fallback ? { fallback_from: fallback } : {}) };
     } catch (e: any) {
       if (!(e instanceof ScenarioError)) throw e;
       lastError = e.message;
@@ -135,6 +144,6 @@ export async function translateToScenario(sentence: unknown, card: RiskCard): Pr
       messages.push({ role: "user", content: `That JSON was rejected: ${lastError}\nReturn the corrected scenario as one JSON object only.` });
     }
   }
-  throw new ScenarioError(`NEAR AI (${model}) did not produce a valid scenario after ${MAX_ATTEMPTS} attempts. Last problem: ${lastError.replace(/^Invalid scenario: /, "")}`);
+  throw new ScenarioError(`${provider} (${model}) did not produce a valid scenario after ${MAX_ATTEMPTS} attempts. Last problem: ${lastError.replace(/^Invalid scenario: /, "")}`);
 }
 
