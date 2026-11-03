@@ -1,0 +1,4 @@
+[toolchain]
+# near-contract-sim pins nearcore 2.14, which needs Rust 1.95.0.
+channel = "1.95.0"
+targets = ["wasm32-unknown-unknown"]

@@ -243,11 +243,14 @@ export function classifyMethods(methodNames: string[], byMethod: Record<string, 
     if ((byMethod[name] ?? []).length > 0) continue; // standard method
     const lower = name.toLowerCase();
     const matched = VIEW_LIKE.test(lower) ? [] : PRIVILEGED_PATTERNS.filter((p) => lower.includes(p));
+    const callback = /^on_|_callback$|^resolve_|_resolve_|^callback_/.test(lower);
     out.push({
       name,
       matched,
       privileged: matched.length > 0,
-      note: matched.length
+      note: callback
+        ? "↩️ callback-looking method — must be #[private] (callable only by the contract itself)"
+        : matched.length
         ? `⚠️ privileged/admin-looking method (matches ${matched.map((m) => `"${m}"`).join(", ")}) — check who can call it`
         : "custom (non-standard) method",
     });

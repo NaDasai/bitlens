@@ -67,6 +67,18 @@ Options:
 - **Offline:** `./scripts/fetch-reference-wasm.sh`, then `npm run scan -- --wasm fixtures/reference/aurora.wasm` scans a local WASM file. The script downloads public GitHub builds of wrap.near, Aurora and SWEAT. They are not guaranteed byte-identical to the deployed code.
 - `HTTPS_PROXY` / `NO_PROXY` are honoured automatically.
 
+## Demo contracts (step 3)
+
+Three native-NEAR vaults with the same user interface (`deposit` / `withdraw(amount)` / `get_balance`), so one set of attack templates covers all of them. Sources are in `contracts/*/src/lib.rs`. The built WASM is committed in `contracts/res/`, and `contracts/build.sh` rebuilds it with cargo-near.
+
+| Demo address (built in, no RPC) | Contract | Expected card | Expected attacks |
+|---|---|---|---|
+| `clean-vault.xray-demo` | correct vault: debits before paying out, callback re-credits a failed payout, admin methods check the owner | LOW | all HELD |
+| `risky-vault.xray-demo` | clean, plus owner-only `upgrade` (redeploy) and `add_full_access_key` | HIGH (strong redeploy and add-key) | all HELD |
+| `vulnerable-vault.xray-demo` | **planted bugs:** `admin_drain` has no owner check; `withdraw` debits only in its callback | HIGH (`admin_drain`) | drain and double-withdraw BROKEN |
+
+`npm run scan -- vulnerable-vault.xray-demo` → `Risk: HIGH`, with the reason `` `admin_drain` looks like a fund-drain method``.
+
 ## Repo layout
 
 ```
@@ -76,7 +88,7 @@ cli/       CLI: thin wrapper over core/
 mcp/       MCP server (stdio), coming next
 web/       web UI (static HTML/JS, served by server/)
 runner/    Rust attack runner over near-contract-sim, coming next
-contracts/ demo contracts (clean / risky / vulnerable), coming next
+contracts/ demo contracts (clean / risky / vulnerable) + res/*.wasm
 ```
 
 ## Limitations

@@ -18,6 +18,7 @@ import {
   type NotableMethod,
   type WasmImport,
 } from "./capabilities.js";
+import { isDemoAccount, readDemoWasm } from "./demo.js";
 import { networkOf, RpcError, viewAccessKeyList, viewCode, type RpcOptions } from "./rpc.js";
 
 export interface Standard {
@@ -36,7 +37,7 @@ export interface AccessKeySummary {
 
 export interface RiskCard {
   account_id: string;
-  source: "rpc" | "file";
+  source: "rpc" | "file" | "demo";
   rpc_network: string | null;
   rpc_url: string | null;
   block_height: number | null;
@@ -77,15 +78,33 @@ export function codeHash(wasm: Uint8Array): string {
   return base58(createHash("sha256").update(wasm).digest());
 }
 
+/** Method names that read as "move everything out". Combined with a strong transfer capability → HIGH. */
+const DRAIN_RE = /drain|sweep|rescue|emergency_withdraw|withdraw_all/;
+
+/**
+ * Capability risk (Layer 1). Deliberately conservative about what raises the level:
+ *   HIGH   — a strongly-evidenced critical capability (redeploy, add full-access key,
+ *            delete account), or a drain-style method on a contract that can send NEAR.
+ *   MEDIUM — someone outside the code can change it (full-access key on the account),
+ *            or a strong non-transfer high capability (e.g. adds function-call keys).
+ *   LOW    — otherwise. Sending NEAR + admin methods is what most contracts do; those
+ *            methods are listed and are exactly what the Layer 2 attacks then test.
+ */
 function computeRisk(caps: DetectedCapability[], notable: NotableMethod[], keys: AccessKeySummary | null) {
   const reasons: string[] = [];
   const strong = caps.filter((c) => c.confidence === "strong");
+  const canTransfer = strong.some((c) => c.id === "transfer");
+  const drains = notable.filter((m) => DRAIN_RE.test(m.name.toLowerCase()));
+  if (canTransfer)
+    for (const m of drains)
+      reasons.push(`🔴 \`${m.name}\` looks like a fund-drain method and the contract can send NEAR: if it is not owner-gated, anyone can empty it`);
   for (const c of strong)
     if (c.severity === "critical" || c.severity === "high")
       reasons.push(`${c.icon} ${c.label}${c.corroborated_by.length ? ` (via ${c.corroborated_by.slice(0, 3).join(", ")})` : ""}`);
   const priv = notable.filter((m) => m.privileged);
-  if (priv.length) reasons.push(
-      `⚠️ ${priv.length} privileged/admin-looking method(s): ${priv.slice(0, 8).map((m) => m.name).join(", ")}${priv.length > 8 ? ", …" : ""}`,
+  if (priv.length)
+    reasons.push(
+      `⚠️ ${priv.length} privileged/admin-looking method(s) to verify: ${priv.slice(0, 8).map((m) => m.name).join(", ")}${priv.length > 8 ? ", …" : ""}`,
     );
   if (keys && keys.full_access > 0)
     reasons.push(`🔑 Account has ${keys.full_access} full-access key(s): the key holder can replace the code at any time`);
@@ -93,8 +112,8 @@ function computeRisk(caps: DetectedCapability[], notable: NotableMethod[], keys:
   if (weak.length) reasons.push(`(${weak.length} more capability(ies) linked but not exposed by any method name — likely SDK boilerplate)`);
 
   let level: RiskLevel = "low";
-  if (strong.some((c) => c.severity === "critical")) level = "high";
-  else if (strong.some((c) => c.severity === "high") || weak.length || priv.length || (keys && keys.full_access > 0)) level = "medium";
+  if (strong.some((c) => c.severity === "critical") || (canTransfer && drains.length)) level = "high";
+  else if ((keys && keys.full_access > 0) || strong.some((c) => c.severity === "high" && c.id !== "transfer")) level = "medium";
   return { level, reasons };
 }
 
@@ -114,7 +133,7 @@ function summarize(card: Omit<RiskCard, "summary">): string {
 
 export interface ScanWasmMeta {
   accountId: string;
-  source: "rpc" | "file";
+  source: "rpc" | "file" | "demo";
   rpcUrl?: string | null;
   blockHeight?: number | null;
   rpcHash?: string | null;
@@ -195,9 +214,11 @@ async function fetchKeySummary(accountId: string, opts?: RpcOptions): Promise<Ac
   }
 }
 
-/** Address → risk card. */
+/** Address → risk card. `*.xray-demo` ids resolve to the bundled demo contracts. */
 export async function scan(accountId: string, opts?: RpcOptions): Promise<RiskCard> {
-  const code = await fetchCode(accountId, opts);
+  const id = assertAccountId(accountId);
+  if (isDemoAccount(id)) return scanWasm(await readDemoWasm(id), { accountId: id, source: "demo" });
+  const code = await fetchCode(id, opts);
   const accessKeys = await fetchKeySummary(code.accountId, { ...opts, rpcUrls: [code.rpcUrl] });
   return scanWasm(code.wasm, {
     accountId: code.accountId,

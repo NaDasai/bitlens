@@ -42,10 +42,35 @@ test("bulk-linked SDK imports are weak unless a method corroborates them", async
   assert.equal(plain.import_profile.kind, "bulk");
   assert.equal(plain.capabilities.find((c) => c.id === "deploy_contract")?.confidence, "weak");
   assert.equal(plain.capabilities.find((c) => c.id === "transfer")?.confidence, "strong");
-  assert.equal(plain.risk.level, "medium");
+  assert.equal(plain.risk.level, "low"); // sending NEAR + bulk-linked boilerplate is normal
   const upgradeable = await scanWasm(makeWasm(all, ["deposit", "withdraw", "upgrade"]), { accountId: "u.near", source: "file" });
   assert.equal(upgradeable.capabilities.find((c) => c.id === "deploy_contract")?.confidence, "strong");
   assert.equal(upgradeable.risk.level, "high");
+});
+
+test("drain-style method + transfer capability → HIGH", async () => {
+  const card = await scanWasm(makeWasm(["promise_batch_action_transfer"], ["deposit", "withdraw", "admin_drain"]), {
+    accountId: "d.near",
+    source: "file",
+  });
+  assert.equal(card.risk.level, "high");
+  assert.match(card.risk.reasons[0], /admin_drain/);
+  const noTransfer = await scanWasm(makeWasm([], ["admin_drain"]), { accountId: "d.near", source: "file" });
+  assert.equal(noTransfer.risk.level, "low"); // cannot send NEAR, so "drain" is just a name
+});
+
+test("demo contracts: clean LOW, risky HIGH (redeploy + add key), vulnerable HIGH (admin_drain)", async () => {
+  const clean = await scan("clean-vault.xray-demo");
+  assert.equal(clean.source, "demo");
+  assert.equal(clean.risk.level, "low");
+  const risky = await scan("risky-vault.xray-demo");
+  assert.equal(risky.risk.level, "high");
+  for (const id of ["deploy_contract", "add_full_access_key"])
+    assert.equal(risky.capabilities.find((c) => c.id === id)?.confidence, "strong", id);
+  const vuln = await scan("vulnerable-vault.xray-demo");
+  assert.equal(vuln.risk.level, "high");
+  assert.match(vuln.risk.reasons.join("\n"), /admin_drain/);
+  await assert.rejects(scan("nope.xray-demo"), /Unknown demo contract/);
 });
 
 test("base58 code hash", () => {

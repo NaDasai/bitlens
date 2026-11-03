@@ -19,6 +19,8 @@ button { cursor: pointer; border-radius: 8px; border: 1px solid var(--line); bac
 .examples { margin: 10px 0 18px; color: var(--muted); font-size: 13px; }
 .ex { padding: 2px 10px; margin-left: 4px; font: 13px var(--mono); }
 .ex:hover { border-color: var(--accent); }
+.examples .sep { margin-left: 8px; }
+.examples { line-height: 2; }
 #status { min-height: 24px; color: var(--muted); margin-bottom: 16px; }
 #status.error { color: var(--red); background: #2d1214; border: 1px solid #5a1e22; padding: 10px 14px; border-radius: 8px; }
 

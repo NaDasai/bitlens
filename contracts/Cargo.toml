@@ -1,0 +1,21 @@
+# Demo contracts for NEAR X-Ray. Three native-NEAR vaults with the same
+# user interface (deposit / withdraw / get_balance) so one set of attack
+# templates applies to all three:
+#   clean_vault      correct: every attack should be HELD
+#   risky_vault      dangerous capabilities (upgrade, add full-access key), owner-gated
+#   vulnerable_vault planted bugs: unguarded admin_drain + debit-after-transfer withdraw
+# Build: ./build.sh  (needs cargo-near 0.22 and Rust 1.95.0 + wasm32-unknown-unknown)
+[workspace]
+resolver = "2"
+members = ["clean_vault", "risky_vault", "vulnerable_vault"]
+
+[workspace.dependencies]
+near-sdk = "=5.29.1"
+
+[profile.release]
+codegen-units = 1
+opt-level = "z"
+lto = true
+debug = false
+panic = "abort"
+overflow-checks = true

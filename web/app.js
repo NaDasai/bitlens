@@ -66,7 +66,7 @@ function renderCard(c) {
       h(
         "div",
         { class: "meta" },
-        `${c.rpc_network ?? c.source} · block ${c.block_height ?? "–"} · ${(c.code_size_bytes / 1024).toFixed(0)} KiB`,
+        c.source === "demo" ? "built-in demo contract (local WASM, no RPC)" : `${c.rpc_network ?? c.source} · block ${c.block_height ?? "–"} · ${(c.code_size_bytes / 1024).toFixed(0)} KiB`,
       ),
       h("div", { class: "meta" }, `code hash ${c.code_hash}${verified}`),
     ),
