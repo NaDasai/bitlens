@@ -56,10 +56,31 @@ CHECKS ("check"), evaluated in order after the steps; the first that fails decid
 - optional "message" on any check: text shown when it fails; may use {net.attacker}, {net.contract},
   {error.<step id>}, {status.<step id>}.
 
+CHECK POLARITY (most important rule):
+- Checks state what a SECURE contract guarantees. Every check passing = HELD (the defence worked);
+  the first failing check = BROKEN (the attack worked). Write the checks a careful auditor would
+  want to stay true, never the attacker's goal.
+- WRONG for "the attacker calls admin_drain and keeps the money":
+    {"check":"step_succeeded","step":"attack"}, {"check":"net_at_least","account":"attacker","near":"20"}
+  (these pass when the drain works, so a real exploit would be reported as HELD).
+- RIGHT: {"check":"net_at_most","account":"attacker","near":"0"} plus {"check":"unchanged","what":"state"}.
+- Never use step_succeeded / any_succeeded on the attacker's call, and never net_at_least with a
+  positive amount for "attacker", unless it is a setup precondition with "else":"inconclusive".
+- "explain.held" describes the defence working; "explain.rejected" the attack call being refused.
+
+PATTERNS:
+- Unauthorised call ("a random account / the attacker calls X"): one call as "attacker" with
+  "attack":true; checks: unchanged code, net_at_most attacker 0, unchanged keys, unchanged state.
+- Same-block double withdraw: control, deposit, two "async" withdraw calls, settle;
+  checks: any_succeeded (else inconclusive), net_at_most attacker 0.
+- A request that yields / waits for an approval or answer and times out: control, deposit, the
+  request as an "async" call, wait_for_yield, advance_past_yield, settle, then a withdraw;
+  checks: yielded, completed, net_equals for the requester over ["<request id>","<withdraw id>"].
+
 RULES:
 - Output ONLY the JSON object. Use ONLY method names from the contract's list below.
-- Put the security property the user cares about in "checks" (a held check = the defence worked).
 - Mark the attacker's call under test with "attack": true.
+- When an EXAMPLE below already tests the sentence's idea, reuse its steps and checks.
 - Keep it minimal: the fewest steps that test the sentence.`;
 
 function contractFacts(card: RiskCard): string {
@@ -76,10 +97,10 @@ function contractFacts(card: RiskCard): string {
     .join("\n");
 }
 
-/** Two real presets for this contract, as worked examples of the format. */
+/** Up to three real presets for this contract, as worked examples of the format. */
 function examples(card: RiskCard): string {
   const all = suggestAttacks(card);
-  const pick = [all.find((a) => a.kind === "unauthorized_call"), all.find((a) => a.kind === "double_withdraw")].filter(Boolean);
+  const pick = (["unauthorized_call", "double_withdraw", "yield_timeout"] as const).map((k) => all.find((a) => a.kind === k)).filter(Boolean);
   if (!pick.length) return "";
   const strip = (s: Scenario) => ({ ...s, steps: s.steps.map((st) => (st.op === "call" && st.args && Object.keys(st.args).length > 6 ? { ...st, args: { receiver_id: "attacker.near", "...": "only the fields the method needs" } } : st)) });
   return "EXAMPLES (built-in presets for this contract):\n" + pick.map((a) => JSON.stringify(strip(a!.scenario))).join("\n");
@@ -101,7 +122,38 @@ function finalise(raw: unknown, sentence: string, card: RiskCard): Scenario {
   const unknown = scenarioMethods(sc).filter((m) => !card.methods.includes(m) && m !== "storage_deposit");
   if (unknown.length) throw new ScenarioError(`Invalid scenario: ${unknown.join(", ")} is not a method of ${card.account_id}. Its methods are: ${card.methods.join(", ")}`);
   if (!(sc.checks?.length)) throw new ScenarioError("Invalid scenario: it has no checks, so nothing would be tested. Add the property that must hold as a check.");
+  const inverted = invertedChecks(sc);
+  if (inverted.length)
+    throw new ScenarioError(
+      `Invalid scenario: ${inverted.join("; ")}. Checks must state what a SECURE contract guarantees (all pass = HELD), not that the attack succeeded; e.g. {"check":"net_at_most","account":"attacker","near":"0"}.`,
+    );
   return sc;
+}
+
+/**
+ * Checks with the polarity backwards: they pass when the attack works, so a
+ * real exploit would be reported as HELD. Setup preconditions that fall back
+ * to INCONCLUSIVE are fine.
+ */
+function invertedChecks(sc: Scenario): string[] {
+  const attackSteps = new Set<string>();
+  const walk = (steps: Scenario["steps"]) => {
+    for (const st of steps as any[]) {
+      if (st.op === "call" && st.attack && st.id) attackSteps.add(st.id);
+      if (st.op === "sweep") walk(st.steps);
+    }
+  };
+  walk(sc.steps);
+  const out: string[] = [];
+  const all = [...(sc.checks ?? []), ...(sc.steps as any[]).filter((s) => s.op === "sweep").flatMap((s) => s.checks ?? [])] as any[];
+  for (const c of all) {
+    if (c.else && c.else !== "broken") continue;
+    if (c.check === "step_succeeded" && attackSteps.has(c.step)) out.push(`"step_succeeded" on the attack call "${c.step}" passes when the attack works`);
+    if (c.check === "any_succeeded" && (c.steps as string[]).length === 1 && attackSteps.has(c.steps[0])) out.push(`"any_succeeded" on only the attack call passes when the attack works`);
+    if (c.check === "net_at_least" && c.account === "attacker" && !String(c.near).trim().startsWith("-") && Number(c.near) > 0)
+      out.push(`"net_at_least" ${c.near} NEAR for the attacker passes when the attacker profits`);
+  }
+  return out;
 }
 
 export interface Translation {

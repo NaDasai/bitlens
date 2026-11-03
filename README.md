@@ -46,7 +46,7 @@ account id ─view_code RPC─▶ WASM ─▶ ① risk card ─▶ ② attacks i
 ### Steps (each with expected output)
 
 1. `npm install`
-2. `npm test` → `# pass 25`, `# fail 0` (account-id validation, capability detection, RPC errors and the offline fallback against a fake RPC, attack selection, verdict rules, scenario validation, and speech-to-test with its NEAR AI → OpenRouter fallback against two fake LLM servers; no network).
+2. `npm test` → `# pass 26`, `# fail 0` (account-id validation, capability detection, RPC errors and the offline fallback against a fake RPC, attack selection, verdict rules, scenario validation, and speech-to-test with its NEAR AI → OpenRouter fallback against two fake LLM servers; no network).
 3. `npm run build:runner` (the first-build warning above applies) → ends with `Finished \`release\` profile [optimized]`; the binary is `runner/target/release/xray-runner`. You can skip this: the server and MCP server start the same build in the background if the binary is missing.
 4. `npm run test:sim` → `# pass 8`, ~2 s. Pins the status of **every** scenario on all four demo contracts, plus the risk level and verdict, through the real engine. It also runs custom scenario JSON end to end, and checks that the runner rejects malformed scenarios on its own. If it passes, the demo tells the same story.
    By hand: `npm run attack -- vulnerable-vault.xray-demo` → 8 scenarios, `Summary: 6 held, 2 broken, 0 inconclusive`, `VERDICT: DANGEROUS`, exit code 3; `npm run attack -- clean-vault.xray-demo` → `7 held, 0 broken`, `VERDICT: SAFE`, exit code 0.
@@ -166,11 +166,12 @@ The LLM has one job: translate the sentence into a **scenario JSON object** in t
 | Env var | Default | |
 |---|---|---|
 | `NEAR_AI_API_KEY` | (none) | NEAR AI Cloud bearer key (primary) |
-| `NEAR_AI_MODEL` | `Qwen/Qwen3.6-35B-A3B-FP8` | any chat model from the [catalogue](https://cloud-api.near.ai/v1/models) with JSON mode; the default is an open-weight reasoning model |
+| `NEAR_AI_MODEL` | `deepseek/deepseek-v3.2` | any chat model from the [catalogue](https://cloud-api.near.ai/v1/models) with JSON mode; the default is an open-weight, non-reasoning model (a few seconds per translation) |
 | `OPEN_ROUTER_KEY` | (none) | OpenRouter key (fallback) |
-| `OPEN_ROUTER_MODEL` | `qwen/qwen3.6-35b-a3b` | the same open-weight model as the NEAR AI default, so both providers behave alike |
+| `OPEN_ROUTER_MODEL` | `deepseek/deepseek-v3.2` | the same open-weight model as the NEAR AI default, so both providers behave alike |
 | `NEAR_AI_BASE_URL`, `OPEN_ROUTER_BASE_URL` | the URLs above | overrides (the tests point them at local fakes) |
 | `LLM_TIMEOUT_S` | `120` | per-request timeout |
+| `LLM_MAX_TOKENS` | `8192` | output cap per request (without one, OpenRouter reserves the model's full output budget and refuses low-credit keys with HTTP 402) |
 
 With neither key set, speech-to-test is off. Everything else works, including hand-written scenario JSON.
 

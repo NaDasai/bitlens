@@ -76,6 +76,7 @@ test("NEAR AI first: chat/completions in JSON mode → validated scenario; OpenR
   assert.equal(req.headers.authorization, "Bearer near-key");
   assert.equal(req.body.model, DEFAULT_NEAR_AI_MODEL);
   assert.deepEqual(req.body.response_format, { type: "json_object" });
+  assert.equal(req.body.max_tokens, 8192, "output is capped so low-credit keys are not refused");
   assert.equal(req.body.messages[1].content, "The attacker calls admin_drain and keeps the money");
   assert.match(req.body.messages[0].content, /admin_drain/, "the prompt lists the contract's real methods");
   assert.equal(t.provider, "NEAR AI Cloud");
@@ -168,4 +169,26 @@ test("still invalid after the repair round → SCENARIO_INVALID; unsafe shapes n
   const evil = { ...DRAIN, steps: [{ op: "call", as: "alice.near", method: "admin_drain" }] };
   near.replies.push({ body: chat(JSON.stringify(evil)) }, { body: chat("not json at all") });
   await assert.rejects(translateToScenario("drain it", card), (e: any) => e instanceof ScenarioError && e.code === "SCENARIO_INVALID");
+});
+
+test("inverted checks (pass when the attack works) → repair round; setup preconditions allowed", async () => {
+  const card = await scan("vulnerable-vault.xray-demo");
+  const inverted = {
+    ...DRAIN,
+    checks: [
+      { check: "step_succeeded", step: "hit" },
+      { check: "net_at_least", account: "attacker", near: "20" },
+    ],
+  };
+  near.replies.push({ body: chat(JSON.stringify(inverted)) }, GOOD);
+  const t = await translateToScenario("the attacker calls admin_drain and keeps the money", card);
+  assert.equal(t.attempts, 2);
+  const repair = near.seen[1].body.messages.at(-1).content;
+  assert.match(repair, /step_succeeded.*attack call "hit"/);
+  assert.match(repair, /net_at_least.*attacker profits/);
+  assert.match(near.seen[0].body.messages[0].content, /CHECK POLARITY/);
+
+  const precondition = { ...DRAIN, checks: [{ check: "step_succeeded", step: "hit", else: "inconclusive" }, ...DRAIN.checks] };
+  near.replies.push({ body: chat(JSON.stringify(precondition)) });
+  assert.equal((await translateToScenario("drain it", card)).attempts, 1);
 });

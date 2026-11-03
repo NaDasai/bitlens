@@ -14,15 +14,21 @@
  * falls through to OpenRouter, and NEAR AI is skipped for a few minutes so
  * every call does not pay for the failure again.
  * LLM_TIMEOUT_S: per-request timeout, default 120.
+ * LLM_MAX_TOKENS: output cap per request, default 8192.
  */
 import { UpstreamError } from "./errors.js";
 import { httpFetch } from "./rpc.js";
 
 export const DEFAULT_NEAR_AI_BASE_URL = "https://cloud-api.near.ai/v1";
-export const DEFAULT_NEAR_AI_MODEL = "Qwen/Qwen3.6-35B-A3B-FP8";
+export const DEFAULT_NEAR_AI_MODEL = "deepseek/deepseek-v3.2";
 export const DEFAULT_OPEN_ROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 /** Same open-weight model as the NEAR AI default, so both providers behave alike. */
-export const DEFAULT_OPEN_ROUTER_MODEL = "qwen/qwen3.6-35b-a3b";
+export const DEFAULT_OPEN_ROUTER_MODEL = "deepseek/deepseek-v3.2";
+/**
+ * Output cap per request. A scenario is ~1-2k tokens; without a cap OpenRouter
+ * reserves the model's full output budget and refuses low-credit keys (HTTP 402).
+ */
+export const DEFAULT_MAX_TOKENS = 8192;
 const COOL_DOWN_MS = 5 * 60_000;
 
 const env = (k: string) => process.env[k]?.trim() || undefined;
@@ -88,13 +94,18 @@ class ProviderFailure extends Error {
   }
 }
 
+function maxTokens() {
+  const n = Math.floor(Number(env("LLM_MAX_TOKENS") ?? DEFAULT_MAX_TOKENS));
+  return Number.isFinite(n) && n >= 256 ? Math.min(n, 65536) : DEFAULT_MAX_TOKENS;
+}
+
 async function callProvider(p: Provider, messages: ChatMessage[], timeoutMs: number) {
   let res;
   try {
     res = await httpFetch(`${p.baseUrl}/chat/completions`, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${p.key}`, ...p.headers },
-      body: JSON.stringify({ model: p.model, messages, response_format: { type: "json_object" } }),
+      body: JSON.stringify({ model: p.model, messages, max_tokens: maxTokens(), response_format: { type: "json_object" } }),
       signal: AbortSignal.timeout(timeoutMs),
     });
   } catch (e: any) {
