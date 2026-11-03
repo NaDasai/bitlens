@@ -1,27 +1,135 @@
 # NEAR X-Ray
 
-**A security scanner for NEAR smart contracts. It answers "is it safe to connect my wallet to this contract?" from the on-chain bytecode alone, so it works even when no source code was published.**
+**A security scanner for NEAR smart contracts. Paste a mainnet account and X-Ray reads the deployed WASM, tells you what the contract *can* do, then attacks the real bytecode in a local NEAR runtime and reports which defences held and which broke. It works without source code, for people (web UI) and for AI agents (MCP server).**
 
-> Status: work in progress (hackathon build). **Layer 1 (capability scan) and its web UI work.** Layer 2 (attack simulation in `near-contract-sim`), the web UI and the MCP server are next. This README is updated after each step.
-
-## Problem
-
-Most NEAR contracts people interact with have no verified source. Wallets show a method name and a deposit, but not what the contract *can do*: send NEAR out, add a full-access key, or redeploy itself with new logic. AI agents that transact on-chain have the same blind spot.
-
-## How it works (Layer 1)
+Hackathon track: AI Security & Defense.
 
 ```
-account id ──view_code RPC──▶ WASM bytes ──┬─ near-contract-parser ─▶ exported methods + NEP standards
-                                           └─ WebAssembly.Module.imports ─▶ host capabilities (what it CAN do)
-                                                    ▼
-                                               risk card
+account id ─view_code RPC─▶ WASM ─▶ ① risk card ─▶ ② attacks in near-contract-sim ─▶ verdict
+                                     (capabilities,     (local nearcore runtime:          safe /
+                                      standards,         real gas, receipts, callbacks)   caution /
+                                      privileged methods)                                  dangerous
+             web UI ◀── HTTP ──┐                                  ┌── MCP (stdio) ──▶ AI agents
+                               └────────── core/ (one engine) ────┘
 ```
 
-NEAR features used: the `view_code` and `view_access_key_list` JSON-RPC queries, NEP standard detection (NEP-141/145/148/171/177/178/199/330), and **WASM host imports**. A contract can only perform an action through a runtime host function such as `promise_batch_action_deploy_contract`. **If the import is absent, the contract cannot do it.**
+## Contents
+- [Quickstart](#quickstart)
+- [What you will see](#what-you-will-see)
+- [MCP server (for AI agents)](#mcp-server-for-ai-agents)
+- [How it works](#how-it-works)
+- [Attack catalogue](#attack-catalogue)
+- [NEAR features used](#near-features-used)
+- [HTTP API and CLI](#http-api-and-cli)
+- [Repo layout](#repo-layout)
+- [Limitations (honest)](#limitations-honest)
+
+## Quickstart
+
+### Prerequisites
+
+| Need | Why | Check |
+|---|---|---|
+| Node.js 20+ | scanner, web server, MCP server | `node --version` |
+| Rust via rustup | attack runner. `runner/rust-toolchain.toml` pins **Rust 1.95.0** + `wasm32-unknown-unknown`; rustup installs both on first build | `rustup --version` |
+| clang + libclang (`apt-get install clang libclang-dev` on Debian/Ubuntu; Xcode CLT on macOS) | nearcore builds RocksDB through bindgen | `ls /usr/lib/llvm-*/lib/libclang.so` |
+| outbound HTTPS to a NEAR RPC | fetching deployed code (not needed for the demo contracts) | |
+| *optional:* `cargo install cargo-near --version 0.22.0 --locked` | only to rebuild the demo contracts; their WASM is committed | |
+
+> ⚠️ **First build of the attack engine compiles nearcore: 10-30 minutes and ~3.5 GB of disk** (≈2.2 GB `runner/target`, ≈1 GB cargo cache). It took 11 min on 4 cores here. Later builds are seconds. The scanner, web UI and MCP server all start immediately and work during the build; attack features say "warming up" until it is done.
+
+### Steps (each with expected output)
+
+1. `npm install`
+2. `npm test` → `# pass 11`, `# fail 0` (account-id validation, capability detection, RPC errors against a fake RPC, attack selection, verdict rules; no network).
+3. `npm run build:runner` (the first-build warning above applies) → ends with `Finished \`release\` profile [optimized]`; the binary is `runner/target/release/xray-runner`. You can skip this: the server and MCP server start the same build in the background if the binary is missing.
+4. `npm run attack -- vulnerable-vault.xray-demo` → 8 scenarios, `Summary: 6 held, 2 broken, 0 inconclusive`, `VERDICT: DANGEROUS`, exit code 3. Then `npm run attack -- clean-vault.xray-demo` → `7 held, 0 broken`, `VERDICT: SAFE`, exit code 0.
+5. `npm run server` → `NEAR X-Ray backend on http://localhost:8787` and, a few seconds later, `[engine] attack engine ready`.
+6. Open **http://localhost:8787** and follow the demo path below.
+7. *Optional, live mainnet:* `npm run test:live` → `# pass 2` (scans wrap.near, token.sweat and aurora; checks each locally computed code hash against the RPC's; checks the `UNKNOWN_ACCOUNT` / `NO_CONTRACT_CODE` errors).
+
+### Demo path (web)
+1. Click **clean-vault** → green **LOW** card. In *Attack proof*, click **Run 7 attacks** → **SAFE**, all ✅ HELD (each one shows why: "only the owner can call this", "Method on_withdraw is private"…).
+2. Click **vulnerable-vault** → red **HIGH** card, first reason: `admin_drain` looks like a fund-drain method.
+3. **Run 8 attacks** → **DANGEROUS**:
+   - ❌ `admin_drain`: attacker.near → contract `call admin_drain` ✓, contract → attacker.near `Transfer 67.8015 NEAR` ✓, net NEAR: `attacker.near +67.8015`, `vulnerable-vault.xray-demo −67.8015`.
+   - ❌ double-withdraw: deposit 5 NEAR, two same-block withdraws, 10 NEAR back.
+   - Each result has the receipt sequence and a collapsible full receipt trace from the sim.
+4. Paste `wrap.near` → real mainnet code, **LOW**; attacks → **SAFE** (3 held, 1 not applicable).
+
+Links can be shared: `http://localhost:8787/?account=vulnerable-vault.xray-demo`.
+
+## What you will see
+
+Verified output (Nov 2026). Mainnet code is fetched read-only and attacked **only in the local sim**.
+
+| Account | Risk card | Attacks | Verdict |
+|---|---|---|---|
+| `clean-vault.xray-demo` | LOW | 7 held | **SAFE** |
+| `risky-vault.xray-demo` | HIGH: 🔴 redeploy (`upgrade`), 🔴 add full-access key (`add_full_access_key`) | 9 held (both are owner-gated) | **CAUTION** (powerful admin, correctly gated) |
+| `vulnerable-vault.xray-demo` | HIGH: `admin_drain` + can send NEAR | **2 broken** (drain, double-spend), 6 held | **DANGEROUS** |
+| `wrap.near` | LOW: 15 methods, NEP-141/145/148, sends NEAR via `near_withdraw`, 0 full-access keys | 3 held, 1 n/a | **SAFE** |
+| `token.sweat` | HIGH: 🔴 redeploy (`up_deploy_code`), 16 admin-looking `acl_*` methods | 15 inconclusive (could not initialise) | **CAUTION** |
+| `aurora` | HIGH: 🔴 add full-access key (`attach_full_access_key`), 🔴 redeploy (`upgrade`), 1 full-access key on the account | 20 inconclusive (could not initialise) | **CAUTION** |
+
+The three demo vaults (`contracts/*/src/lib.rs`, WASM committed in `contracts/res/`) share one interface (`deposit` / `withdraw(amount)` / `get_balance`):
+- **clean:** debits before paying out; a `#[private]` callback re-credits a failed payout; admin methods check the owner.
+- **risky:** clean, plus owner-only `upgrade` (redeploy) and `add_full_access_key`.
+- **vulnerable:** two planted bugs. `admin_drain` has no owner check, and `withdraw` debits only in its callback, so two withdraws in flight both pass.
+
+## MCP server (for AI agents)
+
+An agent that is about to call, deposit into or approve a NEAR contract can ask X-Ray first. The server speaks stdio with the official `@modelcontextprotocol/sdk`.
+
+| Tool | Does | Speed |
+|---|---|---|
+| `scan_contract(account_id)` | capability risk card | instant |
+| `list_attacks(account_id)` | scenarios that apply, with ids | instant |
+| `run_attacks(account_id, scenario_ids?)` | runs them in the local sim: status, explanation, receipt sequence, NEAR deltas | ~1 s |
+| `assess_contract(account_id)` | scan + all attacks → `safe` / `caution` / `dangerous` with reasons | ~1 s |
+
+Every tool is read-only (`readOnlyHint`). Inputs are untrusted: `account_id` is validated against NEAR's account-id rules before any use, and bad ids return `isError` with `INVALID_ACCOUNT_ID`. While the engine is still building or warming, `run_attacks` says so, and `assess_contract` returns a scan-only `caution` marked `attacks_run: false`. Neither blocks. Logs go to stderr.
+
+**Config.** Use absolute paths. Run `npm install` first, and preferably `npm run build:runner`.
+
+```json
+{
+  "mcpServers": {
+    "near-xray": {
+      "command": "/ABSOLUTE/PATH/TO/near-xray/node_modules/.bin/tsx",
+      "args": ["/ABSOLUTE/PATH/TO/near-xray/mcp/server.ts"]
+    }
+  }
+}
+```
+
+That block goes in Claude Desktop's `claude_desktop_config.json` (or any MCP client's equivalent). For Claude Code:
+
+```bash
+claude mcp add near-xray -- "$PWD/node_modules/.bin/tsx" "$PWD/mcp/server.ts"
+```
+
+`claude mcp list` → `near-xray: … - ✓ Connected`.
+
+**Verified agent run** (headless Claude Code with only this server's tools allowed):
+
+> *Prompt:* "I'm about to deposit 20 NEAR into the contract vulnerable-vault.xray-demo. Is that safe?"
+>
+> *Agent:* **No, don't deposit.** NEAR X-Ray rates `vulnerable-vault.xray-demo` **dangerous** after two attacks succeeded in its local simulator.
+> 1. Anyone can call `admin_drain`: an attacker account emptied the whole vault (67.8 NEAR) with no owner check.
+> 2. Two `withdraw` calls in the same block both paid out (5 NEAR deposited, 10 NEAR back), with the extra coming from other depositors' money.
+
+Without an agent: `node_modules/.bin/tsx scripts/mcp-smoke.ts --wait` drives the server with the SDK client. It lists the 4 tools, checks that a bad id is rejected, lists attacks, then calls `assess_contract` until the engine is warm → `DANGEROUS`.
+
+## How it works
+
+### ① Capability scan (instant, no source needed)
+
+A NEAR contract can only act through runtime host functions it imports. **If the import is absent, the contract cannot do the action.** X-Ray reads `WebAssembly.Module.imports` from the deployed code:
 
 | Host import | Flag |
 |---|---|
-| `promise_batch_action_add_key_with_full_access` | 🔴 can add full-access keys |
+| `promise_batch_action_add_key_with_full_access` | 🔴 can add full-access keys (hand over control) |
 | `promise_batch_action_deploy_contract` (+ global-contract variants) | 🔴 can redeploy itself |
 | `promise_batch_action_delete_account` | 🔴 can delete an account |
 | `promise_batch_action_add_key_with_function_call` | 🟠 can add function-call keys |
@@ -29,70 +137,82 @@ NEAR features used: the `view_code` and `view_access_key_list` JSON-RPC queries,
 | `promise_batch_action_stake` | ⚠️ can stake |
 | `promise_then` / `promise_result*`, `promise_yield_*` | info: callbacks, yield/resume (used to pick attacks) |
 
-**Strong vs weak evidence.** near-sdk links *every* Promise action into the binary as soon as a contract builds any Promise, so a plain wrapped-NEAR contract still imports `deploy_contract`. X-Ray reports this honestly:
-- `import_profile.kind = "bulk"`: the module links 7 or more of the 9 Promise actions.
-- A capability is **strong** when the module links actions selectively, or when a public non-standard method name supports it (for example `upgrade` for deploy, `attach_full_access_key` for add-key). Otherwise it is **weak**: it is still shown, but does not raise the risk level on its own.
+**Strong vs weak evidence.** near-sdk links *every* Promise action as soon as a contract builds any Promise, so a plain wrapped-NEAR contract imports `deploy_contract` too. When 7 or more of the 9 actions are linked (`import_profile: "bulk"`), a capability counts as **strong** only if a public non-standard, non-view method name supports it (`upgrade` for deploy, `attach_full_access_key` for add-key). Otherwise it is **weak**: shown, but it does not raise the risk on its own.
 
-Method-name heuristics: non-standard methods are "notable". Of those, any name containing `owner admin upgrade migrate set_ withdraw drain pause self deploy _key grant revoke mint burn` is flagged ⚠️ *privileged-looking: check who can call it*. View-like names (`get_*`, `is_*`, `*_of`) are skipped.
+Risk: **HIGH** for a strong critical capability, or a drain-style method (`drain`, `sweep`, `rescue`, `emergency_withdraw`, `withdraw_all`) on a contract that sends NEAR. **MEDIUM** for full-access keys on the account, or a strong add-function-call-key / delete-key / stake capability. **LOW** otherwise. Admin-looking methods (`owner admin upgrade set_ withdraw pause _key mint burn…`) are listed as "check who can call it". The attacks check exactly that.
 
-## Quickstart (Layer 1)
+### ② Attack simulation
 
-Prerequisites: Node.js 20 or later, and outbound HTTPS to a NEAR RPC.
+`runner/` is a small Rust binary over [near-contract-sim](https://github.com/near/near-contract-sim) (pinned by git rev). That is nearcore 2.14's own runtime in-process: real gas, receipts, callbacks, refunds and yields. Node passes it a JSON spec on stdin and gets JSON results back.
 
-Verified expected output (mainnet, Nov 2026):
+For each contract it builds one world: `owner.near`, `victim.near`, `attacker.near` and `user.near` with 100 NEAR each; the contract deployed with 50 NEAR; `new`/`init` tried with guessed arguments; the victim deposits 20 NEAR. Each scenario then runs on its own **clone** of that world (~2 ms). Arguments come from the bytecode alone: a "kitchen-sink" object where every account-like field is the attacker, plus `amount`, `public_key`, `code` and similar.
 
-| Account | Methods | Standards | Strong capabilities | Risk |
+Rules that keep the verdicts honest:
+- **BROKEN** needs evidence in the sim: NEAR reached the attacker, an access key was added, the contract code changed, contract state changed, or a deposit was paid out twice or lost.
+- **Control run first.** Value-flow scenarios first check, on a scratch copy, that a normal deposit then withdraw works. They attach 1 yoctoNEAR when the contract demands it and register NEP-145 storage first. If the control fails, the result is **INCONCLUSIVE**, not BROKEN.
+- **No false HELD.** If no init call succeeded, a rejection proves nothing about access control. That result is **INCONCLUSIVE** too (aurora and token.sweat are like this).
+- **N/A** when the precondition is missing, e.g. no callback after the payout, so there is no failure branch to test.
+
+Verdict: any BROKEN → **dangerous**. Otherwise **caution** if the card is not LOW, anything was inconclusive, init failed or no attacks ran. Otherwise **safe**.
+
+## Attack catalogue
+
+| # | Scenario (id) | Picked when | What happens in the sim | HELD when |
 |---|---|---|---|---|
-| `wrap.near` | 15 | NEP-141/145/148 | 💰 sends NEAR (`near_withdraw`); no full-access keys | MEDIUM |
-| `token.sweat` | 60 | NEP-141/145/148/330 | 🔴 redeploys (`up_deploy_code`); 16 admin-looking `acl_*` methods | HIGH |
-| `aurora` | 77 | NEP-141/148 | 🔴 adds full-access keys (`attach_full_access_key`), 🔴 redeploys (`upgrade`), 🟠 function-call keys, 💰 sends NEAR; 1 full-access key | HIGH |
+| 1 | Unauthorised privileged call (`unauth:<m>`) | privileged-looking method | `attacker.near` calls it with attacker-controlled args (retries with 1 yocto if required) | rejected, or a no-op (no NEAR to attacker, no state/key/code change) |
+| 2 | Unauthorised key addition (`addkey:<m>`) | add-key capability + a key-ish method | as 1, plus a check of the contract's access keys | no key added |
+| 3 | Double-spend before callback (`double_withdraw`) | deposit + withdraw methods, transfer, callbacks | deposit 5 NEAR, submit two withdraws in the same block, settle | total paid ≤ deposit |
+| 4 | Failed-transfer refund (`failed_transfer_refund`) | same | hold the payout receipt, the recipient deletes itself so the transfer really fails, recipient comes back and withdraws again | full 5 NEAR recoverable (N/A if no callback) |
+| 5 | Callback out-of-gas (`callback_gas`) | same | withdraw at 8-300 Tgas, then withdraw the rest at normal gas | paid + still withdrawable = deposit at every gas level |
+| 6 | Stale yield / timeout (`yield:<m>`) | `promise_yield_create` imported | start the yield, advance past its deadline without resuming | resolves cleanly, no stuck funds |
 
-1. `npm install`
-2. `npm test` → expect `# pass 6`, `# fail 0`. This covers account-id validation, capability detection, and RPC error handling against a local fake RPC.
-3. `npm run test:live` → expect `# pass 2`. This scans wrap.near, token.sweat and aurora on mainnet, checks each locally computed code hash against the RPC's, and checks `UNKNOWN_ACCOUNT` / `NO_CONTRACT_CODE`.
-4. `npm run scan -- wrap.near token.sweat aurora` → one risk card per account (methods, standards, capabilities with the exact import as evidence, privileged methods, risk level).
-5. `npm run server`, then `curl "http://localhost:8787/scan?account_id=wrap.near"` → the risk card as JSON. `POST /scan` with `{"account_id":"..."}` works too.
+Each result has: name, status (`held` / `broken` / `inconclusive` / `not_applicable` / `error`), a plain-English explanation, the receipt sequence (block, from → to, action, deposit, ok/failed), net NEAR per account, sim findings and the full receipt trace.
 
-6. Web UI: with `npm run server` running, open http://localhost:8787 → paste an account (or click `wrap.near` / `token.sweat` / `aurora`) → **Scan** → risk card with a HIGH / MEDIUM / LOW badge, risk reasons, capabilities and their evidence imports, access keys, standards and privileged methods. Shareable link: `http://localhost:8787/?account=aurora`.
+## NEAR features used
 
-Error cases, each returned with a clear code:
-- `curl "localhost:8787/scan?account_id=Bad..Id"` → HTTP 400 `INVALID_ACCOUNT_ID`
-- `account_id=xray-no-such-account-4242.near` → HTTP 404 `UNKNOWN_ACCOUNT`
-- `account_id=root.near` (a wallet, no contract) → HTTP 404 `NO_CONTRACT_CODE`
-- RPC unreachable → HTTP 502 `RPC_UNAVAILABLE`
+- JSON-RPC `query`: `view_code` (deployed WASM + code hash) and `view_access_key_list` (full-access keys on the account). The base58 SHA-256 of the WASM is checked against the RPC's `hash`.
+- NEP standard detection: NEP-141/145/148/171/177/178/199/330, via near-contract-parser.
+- NEAR runtime host imports as a capability model: Promise batch actions, `promise_then`/`promise_result`, `promise_yield_create`/`resume`.
+- NEAR execution semantics, exercised in near-contract-sim: async receipts, callbacks and `#[private]`, 1-yoctoNEAR guards, NEP-145 storage, gas and refunds, `DeleteAccount`, yields, access keys, code hash.
+- near-sdk 5.29 demo contracts built with cargo-near.
 
-Options:
-- `NEAR_RPC_URL=https://rpc.testnet.near.org npm run scan -- <testnet-account>` uses a different RPC. Comma-separate several URLs to try them in order.
-- `npm run scan -- <id> --json` prints the raw card.
-- **Offline:** `./scripts/fetch-reference-wasm.sh`, then `npm run scan -- --wasm fixtures/reference/aurora.wasm` scans a local WASM file. The script downloads public GitHub builds of wrap.near, Aurora and SWEAT. They are not guaranteed byte-identical to the deployed code.
-- `HTTPS_PROXY` / `NO_PROXY` are honoured automatically.
+## HTTP API and CLI
 
-## Demo contracts (step 3)
+- `GET /scan?account_id=…` / `POST /scan {"account_id"}` → risk card.
+- `GET /attacks?account_id=…` → applicable scenarios.
+- `POST /attack {"account_id", "scenario_ids"?}` → `{report, verdict, reasons}`.
+- `GET /engine` → `{state: cold|building|warming|ready|failed, elapsed_s}`.
+- Errors return a code: `400 INVALID_ACCOUNT_ID` / `BAD_REQUEST`, `404 UNKNOWN_ACCOUNT` / `NO_CONTRACT_CODE`, `502 RPC_UNAVAILABLE`, `503 ENGINE_WARMING_UP`.
 
-Three native-NEAR vaults with the same user interface (`deposit` / `withdraw(amount)` / `get_balance`), so one set of attack templates covers all of them. Sources are in `contracts/*/src/lib.rs`. The built WASM is committed in `contracts/res/`, and `contracts/build.sh` rebuilds it with cargo-near.
+CLI:
+- `npm run scan -- <ids…> [--json]`, or `npm run scan -- --wasm file.wasm` (offline; `scripts/fetch-reference-wasm.sh` downloads public builds of wrap/aurora/sweat).
+- `npm run attack -- <id> [--list] [--only a,b] [--json] [--trace]` (exit code 3 if anything is broken).
 
-| Demo address (built in, no RPC) | Contract | Expected card | Expected attacks |
-|---|---|---|---|
-| `clean-vault.xray-demo` | correct vault: debits before paying out, callback re-credits a failed payout, admin methods check the owner | LOW | all HELD |
-| `risky-vault.xray-demo` | clean, plus owner-only `upgrade` (redeploy) and `add_full_access_key` | HIGH (strong redeploy and add-key) | all HELD |
-| `vulnerable-vault.xray-demo` | **planted bugs:** `admin_drain` has no owner check; `withdraw` debits only in its callback | HIGH (`admin_drain`) | drain and double-withdraw BROKEN |
-
-`npm run scan -- vulnerable-vault.xray-demo` → `Risk: HIGH`, with the reason `` `admin_drain` looks like a fund-drain method``.
+Environment:
+- `NEAR_RPC_URL`: comma-separated RPC URLs. Testnet works too.
+- `PORT`: default 8787.
+- `XRAY_RUNNER_BIN`: path to a prebuilt runner.
+- `HTTPS_PROXY` / `NO_PROXY`: honoured.
 
 ## Repo layout
 
 ```
-core/      shared engine (scan, RPC, capability rules). No transport code.
-server/    HTTP backend: thin wrapper over core/
-cli/       CLI: thin wrapper over core/
-mcp/       MCP server (stdio), coming next
-web/       web UI (static HTML/JS, served by server/)
-runner/    Rust attack runner over near-contract-sim, coming next
-contracts/ demo contracts (clean / risky / vulnerable) + res/*.wasm
+core/       the one engine: RPC, scan, capability rules, attack selection, verdict, runner bridge
+server/     HTTP front door (thin) + static web UI from web/
+mcp/        MCP front door (thin, stdio)
+cli/        scan / attack CLIs (thin)
+web/        static HTML/CSS/JS; all text rendered via textContent
+runner/     Rust attack runner over near-contract-sim (JSON in, JSON out)
+contracts/  clean / risky / vulnerable demo vaults (near-sdk 5.29) + res/*.wasm
+scripts/    mcp-smoke.ts, fetch-reference-wasm.sh
 ```
 
-## Limitations
+## Limitations (honest)
 
-The analysis works from bytecode only. Capability detection is reliable in one direction: if an import is absent, that capability is impossible. A present import means the code *can* reach that action, not that any caller can trigger it. Layer 2 attacks test who can trigger it. Deep logic is not inferred. The method-name heuristics are hints, not proofs.
-
-NEAR X-Ray never signs or sends transactions. It only makes read-only RPC view calls.
+- **Never touches mainnet state.** X-Ray only makes RPC *view* calls. Attacks run in a local, in-process runtime, never against a live contract, and nothing is ever signed or sent.
+- **Bytecode only, no source.** A present import means the code *can* reach an action, not that anyone can trigger it. Method-name heuristics are hints. An absent import is a proof.
+- **Arguments are guessed.** X-Ray cannot always build valid arguments or initialise complex contracts (aurora, token.sweat). It reports INCONCLUSIVE in those cases and never claims HELD from a rejection it cannot explain. A SAFE verdict means "the six templates found nothing", not "audited".
+- **Templates, not fuzzing.** Six scenario templates aimed at common NEAR bug classes, driven by the risk card. Logic bugs outside them (pricing, oracle, cross-contract token flows with real counterparties) are not tested. Other contracts the target calls are not deployed, so those calls fail in the sim.
+- **Yield scenario is the least exercised.** None of the demo contracts uses `promise_yield_create`, so template 6 is implemented but has not been run against a real yield contract yet.
+- **Fresh state.** The sim starts from a fresh `init`, not a copy of the contract's mainnet storage.
+- **First build is heavy** (see above). After that a full assessment takes ~0.2-1 s.

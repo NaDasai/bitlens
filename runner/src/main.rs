@@ -319,9 +319,11 @@ fn run_scenario(world: &World, sc: &Scenario) -> ScenarioResult {
     let mut sim = world.sim.clone();
     let c = world.contract.as_str();
     let mut rec = Recorder::new(c);
+    // No init method to call at all counts as initialised (stateless or lazily-initialised contract).
+    let initialised = world.init["ok"] == json!(true) || world.init["tried"].as_array().is_none_or(|t| t.is_empty());
     let (status, explanation) = match &sc.kind {
-        Kind::UnauthorizedCall { method, args } => unauthorized_call(&mut sim, &mut rec, c, method, args, false),
-        Kind::UnauthorizedAddKey { method, args } => unauthorized_call(&mut sim, &mut rec, c, method, args, true),
+        Kind::UnauthorizedCall { method, args } => unauthorized_call(&mut sim, &mut rec, c, method, args, false, initialised),
+        Kind::UnauthorizedAddKey { method, args } => unauthorized_call(&mut sim, &mut rec, c, method, args, true, initialised),
         Kind::DoubleWithdraw { deposit_method, withdraw_method, amount_arg } => {
             double_withdraw(&mut sim, &mut rec, c, deposit_method, withdraw_method, amount_arg)
         }
@@ -337,13 +339,20 @@ fn run_scenario(world: &World, sc: &Scenario) -> ScenarioResult {
 }
 
 /// 1 + 2. Privileged method from a non-owner.
-fn unauthorized_call(sim: &mut Sim, rec: &mut Recorder, c: &str, method: &str, args: &Value, check_keys: bool) -> (Status, String) {
+fn unauthorized_call(sim: &mut Sim, rec: &mut Recorder, c: &str, method: &str, args: &Value, check_keys: bool, initialised: bool) -> (Status, String) {
     let keys_before = sim.access_keys(c).len();
     let state_before = sim.view_state(c, b"");
     let code_before = sim.account(c).map(|a| a.code_hash);
     let out = call_flex(sim, rec, &format!("attacker.near calls {method}"), ATTACKER, c, method, args);
     if out.is_failure() {
         let msg = panic_text(&out);
+        if !initialised {
+            // A rejection from an uninitialised contract proves nothing about access control.
+            return (
+                Status::Inconclusive,
+                format!("The contract could not be initialised in the sim (no init method accepted the guessed arguments), so this rejection may only mean missing state, not an owner check. Contract said: {msg}"),
+            );
+        }
         if is_input_problem(&msg) {
             return (
                 Status::Inconclusive,
