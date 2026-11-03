@@ -183,7 +183,7 @@ if (initial) runScan(initial);
 // Layer 2: attacks
 // ---------------------------------------------------------------------------
 
-const STATUS_LABEL = { held: "✅ HELD", broken: "❌ BROKEN", inconclusive: "❔ INCONCLUSIVE", error: "⚠️ ERROR" };
+const STATUS_LABEL = { held: "✅ HELD", broken: "❌ BROKEN", inconclusive: "❔ INCONCLUSIVE", not_applicable: "➖ N/A", error: "⚠️ ERROR" };
 const VERDICT_LABEL = { safe: "SAFE", caution: "CAUTION", dangerous: "DANGEROUS" };
 
 async function engineState() {
@@ -281,7 +281,7 @@ function renderResults(body, el) {
     "div",
     { class: `verdict ${verdict}` },
     h("div", { class: "v" }, VERDICT_LABEL[verdict]),
-    h("div", {}, h("div", { class: "counts" }, `${s.broken} broken · ${s.held} held · ${s.inconclusive} inconclusive · ${(report.duration_ms / 1000).toFixed(1)} s`), h("ul", { class: "reasons" }, reasons.map((r) => h("li", {}, r)))),
+    h("div", {}, h("div", { class: "counts" }, `${s.broken} broken · ${s.held} held · ${s.inconclusive} inconclusive${s.not_applicable ? ` · ${s.not_applicable} n/a` : ""} · ${(report.duration_ms / 1000).toFixed(1)} s`), h("ul", { class: "reasons" }, reasons.map((r) => h("li", {}, r)))),
   );
   const init = h(
     "div",

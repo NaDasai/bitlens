@@ -7,7 +7,7 @@
  */
 import { listAttacks, runAttacks, toErrorPayload, verdictOf } from "../core/index.js";
 
-const ICON = { held: "✅ HELD", broken: "❌ BROKEN", inconclusive: "❔ INCONCLUSIVE", error: "⚠️ ERROR" } as const;
+const ICON = { held: "✅ HELD", broken: "❌ BROKEN", inconclusive: "❔ INCONCLUSIVE", not_applicable: "➖ N/A", error: "⚠️ ERROR" } as const;
 
 async function main() {
   const args = process.argv.slice(2);
@@ -43,7 +43,7 @@ async function main() {
     }
     const v = verdictOf(card, report);
     const s = report.summary;
-    console.log(`\nSummary: ${s.held} held, ${s.broken} broken, ${s.inconclusive} inconclusive, ${s.error} error  (${report.duration_ms} ms)`);
+    console.log(`\nSummary: ${s.held} held, ${s.broken} broken, ${s.inconclusive} inconclusive, ${s.not_applicable} n/a, ${s.error} error  (${report.duration_ms} ms)`);
     console.log(`VERDICT: ${v.verdict.toUpperCase()}`);
     for (const r of v.reasons) console.log(`  - ${r}`);
     process.exit(s.broken ? 3 : 0);

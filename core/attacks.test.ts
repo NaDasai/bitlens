@@ -25,7 +25,7 @@ test("verdict: broken → dangerous; all held + LOW → safe; HIGH → caution",
     account_id: "x", code_hash: "x", engine: "sim", init: { ok: true, method: "new", tried: [] }, victim_deposit: null,
     accounts: { owner: "", victim: "", attacker: "", user: "" },
     results: statuses.map((s, i) => ({ id: `s${i}`, name: `s${i}`, status: s as any, explanation: "", event_sequence: [], token_deltas: {}, findings: [], trace: "", duration_ms: 0 })),
-    summary: { held: 0, broken: 0, inconclusive: 0, error: 0 }, duration_ms: 0,
+    summary: { held: 0, broken: 0, inconclusive: 0, not_applicable: 0, error: 0 }, duration_ms: 0,
   });
   assert.equal(verdictOf(clean, rep(["held", "held"])).verdict, "safe");
   assert.equal(verdictOf(clean, rep(["held", "broken"])).verdict, "dangerous");

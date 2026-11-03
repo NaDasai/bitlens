@@ -95,6 +95,8 @@ h2.plain { font-family: system-ui, sans-serif; }
 .result.held { border-left-color: var(--green); }
 .result.broken { border-left-color: var(--red); background: #1f1214; }
 .result.inconclusive, .result.error { border-left-color: var(--yellow); }
+.result.not_applicable { border-left-color: var(--muted, #6b7280); opacity: .8; }
+.st.not_applicable { color: var(--muted, #9ca3af); }
 .rhead { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
 .rhead .lbl { font-weight: 600; }
 .st { font-weight: 700; font-size: 13px; white-space: nowrap; }

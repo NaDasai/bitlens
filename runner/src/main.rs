@@ -83,6 +83,8 @@ enum Status {
     Held,
     Broken,
     Inconclusive,
+    /// The scenario's precondition does not exist in this contract (e.g. no callback to test).
+    NotApplicable,
     Error,
 }
 
@@ -213,7 +215,20 @@ impl Recorder {
 }
 
 fn panic_text(out: &TxOutcome) -> String {
-    out.failure().map(|f| f.to_string()).unwrap_or_default()
+    let raw = out.failure().map(|f| f.to_string()).unwrap_or_default();
+    // One line, no SDK source paths, bounded length: this text ends up in reports.
+    let mut t = raw.split_whitespace().collect::<Vec<_>>().join(" ");
+    if let Some(i) = t.find(", /") { t.truncate(i); }
+    if let Some(i) = t.find("', src/") { t.truncate(i); }
+    if t.chars().count() > 220 { t = t.chars().take(220).collect::<String>() + "…"; }
+    t
+}
+
+/// Rounding slack for NEAR comparisons (1 yocto guards, etc.): 0.000000000000000001 NEAR x 1e6.
+const TOL: u128 = 1_000_000;
+
+fn paid_to(out: &TxOutcome, who: &str) -> u128 {
+    i128::try_from(out.effects().near_net(who)).unwrap_or(0).max(0) as u128
 }
 
 /// The call failed because we could not build valid input from bytecode alone,
@@ -315,6 +330,7 @@ fn run_scenario(world: &World, sc: &Scenario) -> ScenarioResult {
 fn unauthorized_call(sim: &mut Sim, rec: &mut Recorder, c: &str, method: &str, args: &Value, check_keys: bool) -> (Status, String) {
     let keys_before = sim.access_keys(c).len();
     let state_before = sim.view_state(c, b"");
+    let code_before = sim.account(c).map(|a| a.code_hash);
     let out = call_flex(sim, rec, &format!("attacker.near calls {method}"), ATTACKER, c, method, args);
     if out.is_failure() {
         let msg = panic_text(&out);
@@ -330,6 +346,12 @@ fn unauthorized_call(sim: &mut Sim, rec: &mut Recorder, c: &str, method: &str, a
     let keys_added = sim.access_keys(c).len().saturating_sub(keys_before);
     let state_changed = sim.view_state(c, b"") != state_before;
     let contract_lost = rec.net(c);
+    if sim.account(c).map(|a| a.code_hash) != code_before {
+        return (
+            Status::Broken,
+            format!("A non-owner call to `{method}` replaced {c}'s contract code. Anyone can redeploy it with their own logic and take everything it holds."),
+        );
+    }
     if check_keys && keys_added > 0 {
         return (
             Status::Broken,
@@ -360,26 +382,86 @@ fn amount_args(amount_arg: &str, yocto: u128) -> Value {
 }
 
 fn deposit(sim: &mut Sim, rec: &mut Recorder, who: &str, c: &str, method: &str, amount: u128) -> Result<(), String> {
+    // NEP-145: register storage up front so the deposit is credited in full
+    // (some contracts otherwise take the storage fee out of the deposit).
+    // Contracts without storage_deposit just fail this harmlessly; not recorded.
+    let reg = sim.call(who, c, "storage_deposit").args_json(json!({ "account_id": who })).deposit(Balance::from_yoctonear(YOCTO_PER_NEAR / 10)).transact();
+    if reg.is_success() {
+        rec.record(&format!("{who} registers storage (0.1 NEAR)"), &reg);
+    }
     let out = sim.call(who, c, method).args_json(json!({})).deposit(Balance::from_yoctonear(amount)).transact();
     rec.record(&format!("{who} deposits {} NEAR", fmt_near(amount)), &out);
-    if out.is_failure() { Err(panic_text(&out)) } else { Ok(()) }
+    if out.is_success() {
+        return Ok(());
+    }
+    let e = panic_text(&out);
+    let l = e.to_lowercase();
+    if l.contains("not registered") || l.contains("storage") {
+        // NEP-145 contracts want storage paid first.
+        let reg = sim.call(who, c, "storage_deposit").args_json(json!({ "account_id": who })).deposit(Balance::from_yoctonear(YOCTO_PER_NEAR / 10)).transact();
+        rec.record(&format!("{who} registers storage (0.1 NEAR)"), &reg);
+        if reg.is_success() {
+            let out = sim.call(who, c, method).args_json(json!({})).deposit(Balance::from_yoctonear(amount)).transact();
+            rec.record(&format!("{who} deposits {} NEAR", fmt_near(amount)), &out);
+            if out.is_success() {
+                return Ok(());
+            }
+            return Err(panic_text(&out));
+        }
+    }
+    Err(e)
+}
+
+/// Control run on a scratch copy: deposit `d`, then withdraw it all with default
+/// gas and no faults. Value-flow scenarios are only judged when this works;
+/// otherwise a failure is ours (could not drive the contract), not the contract's.
+/// Returns the yoctoNEAR to attach to withdraw calls (0, or 1 for NEP-141-style guards).
+fn baseline(sim: &Sim, who: &str, c: &str, dep: &str, wd: &str, arg: &str, d: u128) -> Result<u128, String> {
+    let mut s = sim.clone();
+    let mut scratch = Recorder::new(c);
+    deposit(&mut s, &mut scratch, who, c, dep, d).map_err(|e| format!("deposit via `{dep}` failed: {e}"))?;
+    let mut why = String::new();
+    for y in [0u128, 1] {
+        let mut t = s.clone();
+        let out = t.call(who, c, wd).args_json(amount_args(arg, d)).deposit(Balance::from_yoctonear(y)).transact();
+        let paid = paid_to(&out, who) + y;
+        if out.is_success() && paid.abs_diff(d) <= TOL {
+            return Ok(y);
+        }
+        why = if out.is_failure() { panic_text(&out) } else { format!("it succeeded but paid {} of {} NEAR", fmt_near(paid), fmt_near(d)) };
+        if !needs_one_yocto(&why) {
+            break;
+        }
+    }
+    Err(format!("`{wd}` failed: {why}"))
+}
+
+fn no_baseline(dep: &str, wd: &str, e: &str) -> (Status, String) {
+    (
+        Status::Inconclusive,
+        format!("Control run failed: a plain `{dep}` of 5 NEAR followed by a normal `{wd}` did not work in the sim ({e}). X-Ray could not drive this contract's deposit/withdraw flow from bytecode alone, so this scenario was not judged."),
+    )
 }
 
 /// 3. Double-spend: two withdraws in the same block before the first callback resolves.
 fn double_withdraw(sim: &mut Sim, rec: &mut Recorder, c: &str, dep: &str, wd: &str, arg: &str) -> (Status, String) {
     let d = 5 * YOCTO_PER_NEAR;
+    let y = match baseline(sim, ATTACKER, c, dep, wd, arg, d) {
+        Ok(y) => y,
+        Err(e) => return no_baseline(dep, wd, &e),
+    };
     if let Err(e) = deposit(sim, rec, ATTACKER, c, dep, d) {
         return (Status::Inconclusive, format!("Could not deposit via `{dep}`: {e}"));
     }
-    let h1 = sim.call(ATTACKER, c, wd).args_json(amount_args(arg, d)).submit();
-    let h2 = sim.call(ATTACKER, c, wd).args_json(amount_args(arg, d)).submit();
+    let h1 = sim.call(ATTACKER, c, wd).args_json(amount_args(arg, d)).deposit(Balance::from_yoctonear(y)).submit();
+    let h2 = sim.call(ATTACKER, c, wd).args_json(amount_args(arg, d)).deposit(Balance::from_yoctonear(y)).submit();
     sim.settle();
     let (o1, o2) = (sim.outcome(h1), sim.outcome(h2));
     rec.record(&format!("attacker.near withdraw #1 ({} NEAR)", fmt_near(d)), &o1);
     rec.record(&format!("attacker.near withdraw #2 ({} NEAR, same block)", fmt_near(d)), &o2);
     let received: i128 = [&o1, &o2].iter().map(|o| i128::try_from(o.effects().near_net(ATTACKER)).unwrap_or(0)).sum();
-    let received = received.max(0) as u128;
-    if received > d {
+    let received = received.max(0) as u128 + 2 * y;
+    if received > d + TOL {
         (
             Status::Broken,
             format!(
@@ -407,11 +489,15 @@ fn double_withdraw(sim: &mut Sim, rec: &mut Recorder, c: &str, dep: &str, wd: &s
 ///    the user's balance must be restored, not lost.
 fn failed_transfer_refund(sim: &mut Sim, rec: &mut Recorder, c: &str, dep: &str, wd: &str, arg: &str) -> (Status, String) {
     let d = 5 * YOCTO_PER_NEAR;
+    let y = match baseline(sim, USER, c, dep, wd, arg, d) {
+        Ok(y) => y,
+        Err(e) => return no_baseline(dep, wd, &e),
+    };
     if let Err(e) = deposit(sim, rec, USER, c, dep, d) {
         return (Status::Inconclusive, format!("Could not deposit via `{dep}`: {e}"));
     }
     // Hold the payout so the account can be deleted before it lands: a real failure, not a forced one.
-    let h = sim.call(USER, c, wd).args_json(amount_args(arg, d)).inject(Receipts::action("Transfer"), Fault::Hold(4)).submit();
+    let h = sim.call(USER, c, wd).args_json(amount_args(arg, d)).deposit(Balance::from_yoctonear(y)).inject(Receipts::action("Transfer"), Fault::Hold(4)).submit();
     let _ = sim.run_until(20, |s| s.outcome(h).receipt(wd).is_some());
     let del = sim.tx(USER, USER).action(Action::DeleteAccount(DeleteAccountAction { beneficiary_id: OWNER.parse().unwrap() })).transact();
     rec.record("user.near deletes its account while the payout is in flight", &del);
@@ -422,12 +508,24 @@ fn failed_transfer_refund(sim: &mut Sim, rec: &mut Recorder, c: &str, dep: &str,
     if !transfer_failed {
         return (Status::Inconclusive, "Could not make the payout transfer fail (the withdraw may not pay out with a plain transfer).".into());
     }
+    // A plain transfer with no callback cannot be refunded by the contract, and the only way
+    // we can make it fail is the recipient deleting itself mid-flight: self-inflicted, not an attack.
+    let transfer_block = o.receipts.iter().filter(|r| r.actions.iter().any(|a| a.starts_with("Transfer"))).map(|r| r.block_height).min().unwrap_or(0);
+    let has_callback = o.receipts.iter().any(|r| {
+        r.receiver_id.as_str() == c && r.predecessor_id.as_str() == c && !r.method_names.is_empty() && r.block_height >= transfer_block
+    });
+    if !has_callback {
+        return (
+            Status::NotApplicable,
+            format!("`{wd}` pays out with a plain transfer and no callback, so there is no failure branch to test. The only way to make that transfer fail is the recipient deleting its own account mid-flight, which is self-inflicted, so it is not counted against the contract."),
+        );
+    }
     // The user comes back (same account id) and tries to withdraw again.
     sim.create_account(USER, near(5));
-    let retry = sim.call(USER, c, wd).args_json(amount_args(arg, d)).transact();
+    let retry = sim.call(USER, c, wd).args_json(amount_args(arg, d)).deposit(Balance::from_yoctonear(y)).transact();
     rec.record("user.near re-creates its account and withdraws again", &retry);
-    let got = i128::try_from(retry.effects().near_net(USER)).unwrap_or(0).max(0) as u128;
-    if got == d {
+    let got = paid_to(&retry, USER) + y;
+    if got.abs_diff(d) <= TOL {
         (Status::Held, format!("The payout failed, the contract restored the {} NEAR balance, and the user withdrew it in full afterwards. Nothing was lost.", fmt_near(d)))
     } else {
         (
@@ -445,6 +543,10 @@ fn failed_transfer_refund(sim: &mut Sim, rec: &mut Recorder, c: &str, dep: &str,
 ///    either fail cleanly or complete; funds paid + funds still withdrawable == deposit.
 fn callback_gas(sim: &mut Sim, rec: &mut Recorder, c: &str, dep: &str, wd: &str, arg: &str) -> (Status, String) {
     let d = 5 * YOCTO_PER_NEAR;
+    let y = match baseline(sim, USER, c, dep, wd, arg, d) {
+        Ok(y) => y,
+        Err(e) => return no_baseline(dep, wd, &e),
+    };
     if let Err(e) = deposit(sim, rec, USER, c, dep, d) {
         return (Status::Inconclusive, format!("Could not deposit via `{dep}`: {e}"));
     }
@@ -453,14 +555,13 @@ fn callback_gas(sim: &mut Sim, rec: &mut Recorder, c: &str, dep: &str, wd: &str,
     let mut broken: Option<(u64, u128, TxOutcome, TxOutcome)> = None;
     for tg in points {
         let mut s = sim.clone();
-        let first = s.call(USER, c, wd).args_json(amount_args(arg, d)).gas(Gas::from_teragas(tg)).transact();
-        let paid1 = i128::try_from(first.effects().near_net(USER)).unwrap_or(0).max(0) as u128;
-        let probe = s.call(USER, c, wd).args_json(amount_args(arg, d)).transact();
-        let paid2 = i128::try_from(probe.effects().near_net(USER)).unwrap_or(0).max(0) as u128;
-        let total = paid1 + paid2;
+        let first = s.call(USER, c, wd).args_json(amount_args(arg, d)).deposit(Balance::from_yoctonear(y)).gas(Gas::from_teragas(tg)).transact();
+        let probe = s.call(USER, c, wd).args_json(amount_args(arg, d)).deposit(Balance::from_yoctonear(y)).transact();
+        // The probe's 1-yocto guard deposit is credited back to the user's total.
+        let total = paid_to(&first, USER) + if first.is_success() { y } else { 0 } + paid_to(&probe, USER) + if probe.is_success() { y } else { 0 };
         let tag = if first.is_success() { "paid" } else { "refused" };
         summary.push(format!("{tg} Tgas: {tag}, total recoverable {} NEAR", fmt_near(total)));
-        if total != d && broken.is_none() {
+        if total.abs_diff(d) > TOL && broken.is_none() {
             broken = Some((tg, total, first, probe));
         }
     }
@@ -482,7 +583,7 @@ fn callback_gas(sim: &mut Sim, rec: &mut Recorder, c: &str, dep: &str, wd: &str,
         }
         None => {
             let mut s = sim.clone();
-            let first = s.call(USER, c, wd).args_json(amount_args(arg, d)).gas(Gas::from_teragas(points[0])).transact();
+            let first = s.call(USER, c, wd).args_json(amount_args(arg, d)).deposit(Balance::from_yoctonear(y)).gas(Gas::from_teragas(points[0])).transact();
             rec.record(&format!("user.near withdraws with {} Tgas (lowest point)", points[0]), &first);
             (Status::Held, format!("At every caller gas from {} to {} Tgas the user could recover exactly {} NEAR. No half-applied state. Sweep: {joined}", points[0], points[points.len() - 1], fmt_near(d)))
         }

@@ -150,7 +150,7 @@ server.registerTool(
   {
     title: "Run attacks on a NEAR contract in a local simulator",
     description:
-      "Deploy the contract's real bytecode in a LOCAL NEAR runtime (near-contract-sim: nearcore's own runtime, real gas and callbacks) and run attack scenarios as an attacker account. Returns per scenario: status held/broken/inconclusive, an explanation, the receipt sequence, and net NEAR movement per account. Never sends transactions to any real network. Omit scenario_ids to run all suggested ones. Takes seconds; if the engine is still warming up it says so; retry shortly.",
+      "Deploy the contract's real bytecode in a LOCAL NEAR runtime (near-contract-sim: nearcore's own runtime, real gas and callbacks) and run attack scenarios as an attacker account. Returns per scenario: status held/broken/inconclusive/not_applicable, an explanation, the receipt sequence, and net NEAR movement per account. Never sends transactions to any real network. Omit scenario_ids to run all suggested ones. Takes seconds; if the engine is still warming up it says so; retry shortly.",
     inputSchema: {
       account_id: accountId,
       scenario_ids: z.array(z.string().max(128)).max(50).optional().describe("Scenario ids from list_attacks. Omit to run all suggested."),

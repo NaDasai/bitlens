@@ -34,7 +34,7 @@ export interface AttackScenario {
   params: Record<string, unknown>;
 }
 
-export type AttackStatus = "held" | "broken" | "inconclusive" | "error";
+export type AttackStatus = "held" | "broken" | "inconclusive" | "not_applicable" | "error";
 
 export interface AttackEvent {
   step: string;
@@ -68,7 +68,7 @@ export interface AttackReport {
   victim_deposit: unknown;
   accounts: typeof SIM_ACCOUNTS;
   results: AttackResult[];
-  summary: { held: number; broken: number; inconclusive: number; error: number };
+  summary: { held: number; broken: number; inconclusive: number; not_applicable: number; error: number };
   duration_ms: number;
 }
 
@@ -275,14 +275,14 @@ export async function runAttacks(accountId: string, scenarioIds?: string[], opts
         victim_deposit: null,
         accounts: SIM_ACCOUNTS,
         results: [],
-        summary: { held: 0, broken: 0, inconclusive: 0, error: 0 },
+        summary: { held: 0, broken: 0, inconclusive: 0, not_applicable: 0, error: 0 },
         duration_ms: Date.now() - t0,
       },
     };
   }
   const raw = await runSpec<any>(buildSpec(card, await wasmFile(wasm), chosen));
   const results: AttackResult[] = raw.scenarios;
-  const summary = { held: 0, broken: 0, inconclusive: 0, error: 0 };
+  const summary = { held: 0, broken: 0, inconclusive: 0, not_applicable: 0, error: 0 };
   for (const r of results) summary[r.status]++;
   return {
     card,
