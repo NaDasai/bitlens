@@ -214,13 +214,16 @@ async function fetchKeySummary(accountId: string, opts?: RpcOptions): Promise<Ac
   }
 }
 
-/** Address → risk card. `*.xray-demo` ids resolve to the bundled demo contracts. */
-export async function scan(accountId: string, opts?: RpcOptions): Promise<RiskCard> {
+/** Address → risk card plus the analysed bytecode (the attack engine deploys the same bytes). */
+export async function scanWithCode(accountId: string, opts?: RpcOptions): Promise<{ card: RiskCard; wasm: Uint8Array }> {
   const id = assertAccountId(accountId);
-  if (isDemoAccount(id)) return scanWasm(await readDemoWasm(id), { accountId: id, source: "demo" });
+  if (isDemoAccount(id)) {
+    const wasm = await readDemoWasm(id);
+    return { card: await scanWasm(wasm, { accountId: id, source: "demo" }), wasm };
+  }
   const code = await fetchCode(id, opts);
   const accessKeys = await fetchKeySummary(code.accountId, { ...opts, rpcUrls: [code.rpcUrl] });
-  return scanWasm(code.wasm, {
+  const card = await scanWasm(code.wasm, {
     accountId: code.accountId,
     source: "rpc",
     rpcUrl: code.rpcUrl,
@@ -228,6 +231,12 @@ export async function scan(accountId: string, opts?: RpcOptions): Promise<RiskCa
     rpcHash: code.rpcHash,
     accessKeys,
   });
+  return { card, wasm: code.wasm };
+}
+
+/** Address → risk card. `*.xray-demo` ids resolve to the bundled demo contracts. */
+export async function scan(accountId: string, opts?: RpcOptions): Promise<RiskCard> {
+  return (await scanWithCode(accountId, opts)).card;
 }
 
 export { RpcError };

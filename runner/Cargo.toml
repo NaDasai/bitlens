@@ -1,0 +1,24 @@
+[package]
+name = "xray-runner"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "NEAR X-Ray attack runner: deploys a contract's WASM in near-contract-sim, runs a scenario spec (JSON), prints a JSON result."
+
+[[bin]]
+name = "xray-runner"
+path = "src/main.rs"
+
+[dependencies]
+# Pinned by rev (not on crates.io: nearcore's runtime crates aren't published).
+near-contract-sim = { git = "https://github.com/near/near-contract-sim", rev = "059cfa18900cacad2d9b86b1e989f476b4c6591a" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# nearcore is slow unoptimised; optimise dependencies even in dev builds.
+[profile.dev.package."*"]
+opt-level = 2
+debug = false
+
+[profile.release]
+debug = false

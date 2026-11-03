@@ -12,12 +12,17 @@
     "scan": "tsx cli/scan.ts",
     "server": "tsx server/index.ts",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test core/scan.test.ts",
-    "test:live": "XRAY_LIVE=1 tsx --test core/live.test.ts"
+    "test": "tsx --test core/scan.test.ts core/attacks.test.ts",
+    "test:live": "XRAY_LIVE=1 tsx --test core/live.test.ts",
+    "attack": "tsx cli/attack.ts",
+    "build:runner": "cd runner && cargo build --release --locked",
+    "mcp": "tsx mcp/server.ts"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "near-contract-parser": "1.0.0",
-    "undici": "^7.30.1"
+    "undici": "^7.30.1",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

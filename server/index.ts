@@ -3,13 +3,27 @@
  *   GET  /health
  *   GET  /scan?account_id=wrap.near
  *   POST /scan   {"account_id":"wrap.near"}
+ *   GET  /attacks?account_id=…      suggested attack scenarios (no sim run)
+ *   POST /attack {"account_id","scenario_ids"?}   run them in near-contract-sim
+ *   GET  /engine                     attack-engine warm-up status
  *   GET  /       static web UI (web/)
  */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { readFile } from "node:fs/promises";
 import { extname, join, normalize, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { scan, toErrorPayload } from "../core/index.js";
+import {
+  engineStatus,
+  EngineNotReadyError,
+  listAttacks,
+  runAttacks,
+  scan,
+  startWarmup,
+  toErrorPayload,
+  verdictOf,
+  warmReady,
+  warmupSpec,
+} from "../core/index.js";
 
 const PORT = Number(process.env.PORT ?? 8787);
 const WEB_DIR = resolve(fileURLToPath(new URL("../web/", import.meta.url)));
@@ -59,6 +73,25 @@ export const server = createServer(async (req, res) => {
       return sendJson(res, 200, card);
     }
 
+    if (url.pathname === "/engine") return sendJson(res, 200, engineStatus());
+
+    if (url.pathname === "/attacks") {
+      const { card, attacks } = await listAttacks(url.searchParams.get("account_id") ?? "");
+      return sendJson(res, 200, { account_id: card.account_id, attacks });
+    }
+
+    if (url.pathname === "/attack" && req.method === "POST") {
+      const body = await readJson(req);
+      if (body.scenario_ids !== undefined && !(Array.isArray(body.scenario_ids) && body.scenario_ids.every((s: unknown) => typeof s === "string")))
+        return sendJson(res, 400, { error: { code: "BAD_REQUEST", message: "scenario_ids must be an array of strings" } });
+      if (!warmReady()) {
+        const st = engineStatus();
+        throw new EngineNotReadyError(`Attack engine still warming up (${st.state}${st.detail ? `: ${st.detail}` : ""}, ${st.elapsed_s}s). Retry shortly; /scan works meanwhile.`);
+      }
+      const { card, report } = await runAttacks(body.account_id, body.scenario_ids);
+      return sendJson(res, 200, { report, ...verdictOf(card, report) });
+    }
+
     if (req.method === "GET") return serveStatic(url.pathname, res);
     return sendJson(res, 405, { error: { code: "METHOD_NOT_ALLOWED", message: req.method } });
   } catch (e) {
@@ -68,6 +101,8 @@ export const server = createServer(async (req, res) => {
 });
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  // Warm the attack engine in the background; never block startup.
+  void startWarmup((m) => console.log(m), warmupSpec);
   server.listen(PORT, () => {
     console.log(`NEAR X-Ray backend on http://localhost:${PORT}  (try: curl "http://localhost:${PORT}/scan?account_id=wrap.near")`);
   });
