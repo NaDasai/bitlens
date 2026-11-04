@@ -65,7 +65,7 @@ test("vulnerable admin_drain: the NEAR really moves to the attacker", { skip: !b
   assert.equal(BigInt(d["attacker.near"].yocto), -BigInt(d["vulnerable-vault.bitlens-demo"].yocto));
 });
 
-// --- custom scenario JSON (what speech-to-test produces) through the real runner ---
+// --- custom scenario JSON (what text-to-test produces) through the real runner ---
 
 const DRAIN = {
   id: "custom:drain",

@@ -18,7 +18,7 @@
   <a class="brand" href="/"><img src="/logo.svg" alt="" width="32" height="32" /><span>Bit<b>Lens</b></span></a>
   <div class="links">
     <a href="#how">How it works</a>
-    <a href="#speech">Speech-to-test</a>
+    <a href="#text-to-test">Text-to-test</a>
     <a href="#mcp">MCP</a>
     <a href="https://github.com/NaDasai/bitlens">GitHub</a>
   </div>
@@ -87,13 +87,13 @@
   </div>
 </section>
 
-<section id="speech" class="wrap section split">
+<section id="text-to-test" class="wrap section split">
   <div>
-    <h2>Speech-to-test: describe an attack, get a test</h2>
+    <h2>Text-to-test: describe an attack, get a test</h2>
     <p>Type an attack in plain English. An LLM (NEAR AI Cloud, with OpenRouter as fallback) translates it into a <b>scenario JSON</b> for this contract. It never writes code. The JSON is validated (real methods only, fixed sim accounts, checks that must hold) and you can review or edit it before it runs on the same engine as the built-in attacks.</p>
     <a class="btn ghost" href="/app">Try it in the app</a>
   </div>
-  <div class="speech">
+  <div class="t2t">
     <div class="say"><span class="muted small">You type</span><p>"the attacker calls admin_drain and keeps the money"</p></div>
     <pre class="json"><code>{ "steps": [ { "op": "call", "as": "attacker",
     "method": "admin_drain", "attack": true } ],

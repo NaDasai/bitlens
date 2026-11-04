@@ -8,7 +8,7 @@
  *   GET  /engine                     attack-engine warm-up status
  *   POST /attack {"account_id","scenarios":[…]}  run custom scenario JSON instead
  *   POST /translate {"account_id","sentence"}    English → scenario JSON (NEAR AI Cloud, fallback OpenRouter)
- *   GET  /llm                        speech-to-test LLM configuration (never the key)
+ *   GET  /llm                        text-to-test LLM configuration (never the key)
  *   GET  /       landing page;  GET /app  the web app (static, web/)
  */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";

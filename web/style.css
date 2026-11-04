@@ -117,7 +117,7 @@ h2.plain { font-family: system-ui, sans-serif; }
 pre.trace { font: 11.5px/1.45 var(--mono); background: #0d1117; border: 1px solid var(--line); border-radius: 8px; padding: 10px; overflow-x: auto; max-height: 420px; color: var(--muted); }
 @media (max-width: 560px) { .verdict { flex-direction: column; } .pill { max-width: 100%; } }
 
-/* speech-to-test */
+/* text-to-test */
 .custom textarea { width: 100%; box-sizing: border-box; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg, #0d1117); color: var(--text); font: 13px/1.45 var(--mono); resize: vertical; }
 .custom textarea:focus { outline: 2px solid var(--accent); border-color: transparent; }
 #say { font-family: inherit; font-size: 14px; }

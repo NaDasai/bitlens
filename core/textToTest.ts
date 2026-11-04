@@ -1,5 +1,5 @@
 /**
- * Speech-to-test: a typed plain-English sentence → scenario JSON → the same
+ * Text-to-test: a typed plain-English sentence → scenario JSON → the same
  * runner as the presets.
  *
  * The LLM (NEAR AI Cloud, falling back to OpenRouter; JSON mode) has one job: translate a sentence into a
