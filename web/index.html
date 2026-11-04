@@ -4,36 +4,175 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>BitLens</title>
-<link rel="stylesheet" href="/style.css" />
+<meta name="description" content="BitLens attacks a NEAR smart contract's real bytecode in a local simulator before you trust it. Web app for people, MCP server for AI agents." />
+<link rel="icon" href="/logo.svg" type="image/svg+xml" />
+<link rel="stylesheet" href="/landing.css" />
+<script>
+  // Old links (/?account=…) now belong to the app.
+  if (new URLSearchParams(location.search).has("account")) location.replace("/app" + location.search);
+</script>
 </head>
 <body>
-<header>
-  <h1>Bit<span>Lens</span></h1>
-  <p class="tag">Is it safe to connect my wallet to this contract? Answered from the deployed bytecode. No source needed.</p>
-</header>
 
-<main>
-  <form id="scan-form" autocomplete="off">
-    <input id="account" name="account" placeholder="Paste a NEAR mainnet account, e.g. wrap.near" spellcheck="false" required />
-    <button id="scan-btn" type="submit">Scan</button>
-  </form>
-  <div class="examples">Try:
-    <button type="button" class="ex" data-id="wrap.near">wrap.near</button>
-    <button type="button" class="ex" data-id="token.sweat">token.sweat</button>
-    <button type="button" class="ex" data-id="aurora">aurora</button>
-    <span class="sep">· demo:</span>
-    <button type="button" class="ex" data-id="clean-vault.bitlens-demo">clean-vault</button>
-    <button type="button" class="ex" data-id="risky-vault.bitlens-demo">risky-vault</button>
-    <button type="button" class="ex" data-id="vulnerable-vault.bitlens-demo">vulnerable-vault</button>
-    <button type="button" class="ex" data-id="yield-escrow.bitlens-demo">yield-escrow</button>
+<nav class="nav wrap">
+  <a class="brand" href="/"><img src="/logo.svg" alt="" width="32" height="32" /><span>Bit<b>Lens</b></span></a>
+  <div class="links">
+    <a href="#how">How it works</a>
+    <a href="#speech">Speech-to-test</a>
+    <a href="#mcp">MCP</a>
+    <a href="https://github.com/NaDasai/bitlens">GitHub</a>
+  </div>
+  <a class="btn small" href="/app">Open the app</a>
+</nav>
+
+<header class="hero wrap">
+  <div class="hero-text">
+    <p class="eyebrow">Security scanner for NEAR smart contracts</p>
+    <h1>Attack the contract <span>before you trust it.</span></h1>
+    <p class="lead">BitLens reads a contract's deployed WASM, tells you what it <em>can</em> do, then attacks the real bytecode in a local NEAR runtime and reports which defences held and which broke. No source code needed.</p>
+    <div class="ctas">
+      <a class="btn" href="/app">Open the app <span aria-hidden="true">→</span></a>
+      <a class="btn ghost" href="#mcp">Connect your AI agent (MCP)</a>
+    </div>
+    <p class="note">Read-only: BitLens only makes RPC <code>view_code</code> / <code>view_access_key_list</code> queries and never sends a transaction. Attacks run in a local simulator.</p>
   </div>
 
-  <div id="status" role="status"></div>
-  <section id="card" hidden></section>
-  <section id="attacks" hidden></section>
-</main>
+  <figure class="result" aria-label="Example result">
+    <div class="result-head">
+      <div>
+        <div class="mono acct">vulnerable-vault.bitlens-demo</div>
+        <div class="muted small">built-in demo contract · 8 attacks</div>
+      </div>
+      <span class="verdict bad">DANGEROUS</span>
+    </div>
+    <ul class="checks">
+      <li><span class="st broken">BROKEN</span> <span>Anyone can call <code>admin_drain</code>: the attacker walked away with <b class="plus">+67.8015 NEAR</b>.</span></li>
+      <li><span class="st broken">BROKEN</span> <span>Two same-block <code>withdraw</code> calls both paid out: <b class="plus">+5.0000 NEAR</b> of other depositors' money.</span></li>
+      <li><span class="st held">HELD</span> <span>Non-owner <code>set_owner</code> was rejected: <i>only the owner can call this</i>.</span></li>
+      <li class="more muted">+ 5 more defences held</li>
+    </ul>
+    <div class="trail mono">
+      <div>#10 attacker.near → vault: call admin_drain ✓</div>
+      <div>#11 vault → attacker.near: Transfer 67.8015 NEAR ✓</div>
+    </div>
+    <figcaption class="muted small">A real run on one of the four built-in demo contracts.</figcaption>
+  </figure>
+</header>
 
-<footer>Read-only: BitLens only makes RPC <code>view_code</code> / <code>view_access_key_list</code> queries and never sends transactions.</footer>
-<script src="/app.js" type="module"></script>
+<section class="stats wrap" aria-label="At a glance">
+  <div><b>0</b><span>transactions sent</span></div>
+  <div><b>6</b><span>attack families</span></div>
+  <div><b>~1 s</b><span>per full assessment</span></div>
+  <div><b>5</b><span>MCP tools for agents</span></div>
+</section>
+
+<section id="how" class="wrap section">
+  <h2>How it works</h2>
+  <div class="steps">
+    <article>
+      <span class="num">1</span>
+      <h3>Read the bytecode</h3>
+      <p>Paste any mainnet account. BitLens fetches the deployed WASM and reads its host imports, exported methods and token standards: can it send NEAR, add keys, redeploy itself, call other contracts?</p>
+    </article>
+    <article>
+      <span class="num">2</span>
+      <h3>Attack it in a local sim</h3>
+      <p>The real bytecode runs in a local NEAR runtime (near-contract-sim) with an owner, a victim and an attacker: unauthorised admin calls, added keys, same-block double withdraws, failed-transfer refunds, callback out-of-gas, stale yield timeouts.</p>
+    </article>
+    <article>
+      <span class="num">3</span>
+      <h3>Get a verdict with evidence</h3>
+      <p>Each defence comes back <b class="held-t">HELD</b>, <b class="broken-t">BROKEN</b> or <b class="muted">INCONCLUSIVE</b>, with the receipt trail and who gained or lost NEAR. If BitLens couldn't drive the contract, it says so instead of guessing.</p>
+    </article>
+  </div>
+</section>
+
+<section id="speech" class="wrap section split">
+  <div>
+    <h2>Speech-to-test: describe an attack, get a test</h2>
+    <p>Type an attack in plain English. An LLM (NEAR AI Cloud, with OpenRouter as fallback) translates it into a <b>scenario JSON</b> for this contract. It never writes code. The JSON is validated (real methods only, fixed sim accounts, checks that must hold) and you can review or edit it before it runs on the same engine as the built-in attacks.</p>
+    <a class="btn ghost" href="/app">Try it in the app</a>
+  </div>
+  <div class="speech">
+    <div class="say"><span class="muted small">You type</span><p>"the attacker calls admin_drain and keeps the money"</p></div>
+    <pre class="json"><code>{ "steps": [ { "op": "call", "as": "attacker",
+    "method": "admin_drain", "attack": true } ],
+  "checks": [
+    { "check": "net_at_most", "account": "attacker", "near": "0" },
+    { "check": "unchanged", "what": "state" } ] }</code></pre>
+    <div class="out"><span class="st broken">BROKEN</span> attacker <b class="plus">+67.8015 NEAR</b></div>
+  </div>
+</section>
+
+<section id="mcp" class="wrap section mcp">
+  <p class="eyebrow">For AI agents</p>
+  <h2>An MCP server: let your agent ask BitLens first</h2>
+  <p class="lead small-lead">An agent that is about to call, deposit into or approve a NEAR contract can check it first. BitLens ships an MCP server (stdio, official SDK). Every tool is read-only and validates its input.</p>
+
+  <div class="tools">
+    <div><code>scan_contract</code><p>Capability risk card from the bytecode. Instant.</p></div>
+    <div><code>list_attacks</code><p>The attack scenarios that apply, with their scenario JSON.</p></div>
+    <div><code>run_attacks</code><p>Runs them in the local sim: status, explanation, receipts, NEAR deltas.</p></div>
+    <div><code>assess_contract</code><p>Scan + all attacks → <b>safe</b> / <b>caution</b> / <b>dangerous</b> with reasons.</p></div>
+    <div><code>run_custom_attack</code><p>Your agent's own idea, in plain English or as scenario JSON.</p></div>
+  </div>
+
+  <div class="split mcp-split">
+    <div>
+      <h3>Add it in one line</h3>
+      <div class="code">
+        <div class="code-head"><span>Claude Code</span><button type="button" class="copy" data-copy="cc">Copy</button></div>
+        <pre id="cc"><code>claude mcp add bitlens -- "$PWD/node_modules/.bin/tsx" "$PWD/mcp/server.ts"</code></pre>
+      </div>
+      <div class="code">
+        <div class="code-head"><span>Claude Desktop / any MCP client</span><button type="button" class="copy" data-copy="json">Copy</button></div>
+        <pre id="json"><code>{
+  "mcpServers": {
+    "bitlens": {
+      "command": "/ABSOLUTE/PATH/TO/bitlens/node_modules/.bin/tsx",
+      "args": ["/ABSOLUTE/PATH/TO/bitlens/mcp/server.ts"]
+    }
+  }
+}</code></pre>
+      </div>
+      <p class="muted small">Run it from a clone of the repo after <code>npm install</code> and <code>npm run build:runner</code>. Plain-English attacks need <code>NEAR_AI_API_KEY</code> or <code>OPEN_ROUTER_KEY</code>.</p>
+    </div>
+    <div class="chat">
+      <div class="msg user"><span class="who">You</span>I'm about to deposit 20 NEAR into vulnerable-vault. Is that safe?</div>
+      <div class="msg tool mono">→ assess_contract("vulnerable-vault.bitlens-demo")</div>
+      <div class="msg agent"><span class="who">Agent</span><b>No, don't deposit.</b> BitLens rates it <b class="broken-t">dangerous</b>: anyone can call <code>admin_drain</code> and empty the vault (67.8 NEAR), and two same-block <code>withdraw</code> calls both pay out, with the extra coming from other depositors.</div>
+      <p class="muted small">Condensed from a real agent run (headless Claude Code, only BitLens's tools allowed).</p>
+    </div>
+  </div>
+</section>
+
+<section class="wrap section final">
+  <img src="/logo.svg" alt="" width="56" height="56" />
+  <h2>Check a contract now</h2>
+  <p class="muted">Try a live mainnet contract (wrap.near, token.sweat, aurora) or one of the four demo contracts.</p>
+  <div class="ctas center">
+    <a class="btn" href="/app">Open the app <span aria-hidden="true">→</span></a>
+    <a class="btn ghost" href="https://github.com/NaDasai/bitlens">View on GitHub</a>
+  </div>
+</section>
+
+<footer class="wrap foot">
+  <span>BitLens · MIT license</span>
+  <span>Analyses public on-chain bytecode. Never sends transactions.</span>
+</footer>
+
+<script>
+  for (const b of document.querySelectorAll(".copy")) {
+    b.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(document.getElementById(b.dataset.copy).innerText);
+        b.textContent = "Copied";
+      } catch {
+        b.textContent = "Select and copy";
+      }
+      setTimeout(() => (b.textContent = "Copy"), 1500);
+    });
+  }
+</script>
 </body>
 </html>

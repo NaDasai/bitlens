@@ -51,7 +51,7 @@ account id ─view_code RPC─▶ WASM ─▶ ① risk card ─▶ ② attacks i
 4. `npm run test:sim` → `# pass 8`, ~2 s. Pins the status of **every** scenario on all four demo contracts, plus the risk level and verdict, through the real engine. It also runs custom scenario JSON end to end, and checks that the runner rejects malformed scenarios on its own. If it passes, the demo tells the same story.
    By hand: `npm run attack -- vulnerable-vault.bitlens-demo` → 8 scenarios, `Summary: 6 held, 2 broken, 0 inconclusive`, `VERDICT: DANGEROUS`, exit code 3; `npm run attack -- clean-vault.bitlens-demo` → `7 held, 0 broken`, `VERDICT: SAFE`, exit code 0.
 5. `npm run server` → `BitLens backend on http://localhost:8787` and, a few seconds later, `[engine] attack engine ready`.
-6. Open **http://localhost:8787** and follow the demo path below.
+6. Open **http://localhost:8787** for the landing page (what BitLens does, the MCP server and how to add it), then **Open the app**, or go straight to **http://localhost:8787/app**, and follow the demo path below.
 7. **Before a live demo:** `npm run preflight` (~4 s) → a ✔/⚠/✘ checklist ending in `Ready to demo.`:
    - Node version and runner build.
    - All four demo verdicts.
@@ -79,7 +79,7 @@ account id ─view_code RPC─▶ WASM ─▶ ① risk card ─▶ ② attacks i
 
 **Venue wifi down?** Every successful fetch saves the code to `.cache/code/` (gitignored). If every RPC endpoint is unreachable, BitLens analyses that copy instead. The card says so in yellow ("⚠ RPC unreachable: showing the copy of this code fetched …"), `source` is `"cache"`, and MCP results carry an `offline_cache` note. Only *unreachable* falls back: "unknown account" / "no contract" answers from a live RPC are never masked. The four demo contracts never need the network.
 
-Links can be shared: `http://localhost:8787/?account=vulnerable-vault.bitlens-demo`.
+Links can be shared: `http://localhost:8787/app?account=vulnerable-vault.bitlens-demo` (old `/?account=…` links forward to `/app`).
 
 ## What you will see
 
@@ -331,7 +331,7 @@ core/       the one engine: RPC, scan, capability rules, attack selection, scena
 server/     HTTP front door (thin) + static web UI from web/
 mcp/        MCP front door (thin, stdio)
 cli/        scan / attack CLIs (thin)
-web/        static HTML/CSS/JS; all text rendered via textContent
+web/        static HTML/CSS/JS: index.html (landing page), app.html + app.js (the app, at /app), logo.svg; all app text rendered via textContent
 runner/     Rust scenario interpreter over near-contract-sim (scenario.rs: format + validation, interp.rs: execution)
 scenarios/  presets/*.json (the six attack templates as canned scenario JSON), examples/*.json
 contracts/  clean / risky / vulnerable / yield-escrow demo contracts (near-sdk 5.29) + res/*.wasm

@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>BitLens</title>
+<link rel="icon" href="/logo.svg" type="image/svg+xml" />
+<link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+<header>
+  <a class="brand" href="/" title="BitLens home"><img src="/logo.svg" alt="" width="34" height="34" /><h1>Bit<span>Lens</span></h1></a>
+  <p class="tag">Is it safe to connect my wallet to this contract? Answered from the deployed bytecode. No source needed.</p>
+</header>
+
+<main>
+  <form id="scan-form" autocomplete="off">
+    <input id="account" name="account" placeholder="Paste a NEAR mainnet account, e.g. wrap.near" spellcheck="false" required />
+    <button id="scan-btn" type="submit">Scan</button>
+  </form>
+  <div class="examples">Try:
+    <button type="button" class="ex" data-id="wrap.near">wrap.near</button>
+    <button type="button" class="ex" data-id="token.sweat">token.sweat</button>
+    <button type="button" class="ex" data-id="aurora">aurora</button>
+    <span class="sep">· demo:</span>
+    <button type="button" class="ex" data-id="clean-vault.bitlens-demo">clean-vault</button>
+    <button type="button" class="ex" data-id="risky-vault.bitlens-demo">risky-vault</button>
+    <button type="button" class="ex" data-id="vulnerable-vault.bitlens-demo">vulnerable-vault</button>
+    <button type="button" class="ex" data-id="yield-escrow.bitlens-demo">yield-escrow</button>
+  </div>
+
+  <div id="status" role="status"></div>
+  <section id="card" hidden></section>
+  <section id="attacks" hidden></section>
+</main>
+
+<footer>Read-only: BitLens only makes RPC <code>view_code</code> / <code>view_access_key_list</code> queries and never sends transactions.</footer>
+<script src="/app.js" type="module"></script>
+</body>
+</html>
