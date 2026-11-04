@@ -41,7 +41,7 @@ account id ─view_code RPC─▶ WASM ─▶ ① risk card ─▶ ② attacks i
 | outbound HTTPS to a NEAR RPC | fetching deployed code (not needed for the demo contracts) | |
 | *optional:* `cargo install cargo-near --version 0.22.0 --locked` | only to rebuild the demo contracts; their WASM is committed | |
 
-> ⚠️ **First build of the attack engine compiles nearcore: 10-30 minutes and ~3.5 GB of disk** (≈2.2 GB `runner/target`, ≈1 GB cargo cache). It took 11 min on 4 cores here. Later builds are seconds. The scanner, web UI and MCP server all start immediately and work during the build; attack features say "warming up" until it is done.
+> ⚠️ **First build of the attack engine compiles nearcore: 10-30 minutes and ~3.5 GB of disk** (≈2.2 GB `runner/target`, ≈1 GB cargo cache). It took 11 min 43 s from a fresh clone here. Later builds are seconds. The scanner, web UI and MCP server all start immediately and work during the build; attack features say "warming up" until it is done.
 
 ### Steps (each with expected output)
 
@@ -61,6 +61,8 @@ account id ─view_code RPC─▶ WASM ─▶ ① risk card ─▶ ② attacks i
    - MCP server starts and lists 5 tools.
 
    Exit code 1 if anything the demo needs is broken.
+
+**Verified from a fresh clone of `NaDasai/bitlens`:** `npm ci` (0 vulnerabilities), typecheck clean, `npm test` 27 pass, `npm run build:runner` 11 min 43 s, `npm run test:sim` 8 pass, `npm run preflight` → `Ready to demo.` Demo verdicts: clean-vault SAFE, risky-vault CAUTION, vulnerable-vault DANGEROUS, yield-escrow DANGEROUS. Live scans of wrap.near, token.sweat and aurora work. The web UI, the CLI and the MCP server were each checked end to end ([speech-to-test results](#speech-to-test-plain-english--test), [MCP](#mcp-server-for-ai-agents)).
 8. *Optional, live mainnet:* `npm run test:live` → `# pass 2` (scans wrap.near, token.sweat and aurora; checks each locally computed code hash against the RPC's; checks the `UNKNOWN_ACCOUNT` / `NO_CONTRACT_CODE` errors).
 
 ### Demo path (web)
@@ -144,6 +146,8 @@ claude mcp add bitlens -- "$PWD/node_modules/.bin/tsx" "$PWD/mcp/server.ts"
 
 Without an agent: `node_modules/.bin/tsx scripts/mcp-smoke.ts --wait` drives the server with the SDK client. It lists the 5 tools, checks that a bad id is rejected, lists attacks, then calls `assess_contract` until the engine is warm → `DANGEROUS`.
 
+**Verified on a fresh clone:** the server starts as `bitlens` with all 5 tools. `scan_contract wrap.near` returns the live card (risk LOW). A bad id comes back as `isError` with `INVALID_ACCOUNT_ID`. `assess_contract vulnerable-vault.bitlens-demo` returns DANGEROUS. `run_custom_attack` returns HELD on clean-vault with the takeover scenario JSON (`scenarios/examples/takeover.json`), and HELD on risky-vault with a plain-English attack (see the table under [Speech-to-test](#speech-to-test-plain-english--test)).
+
 ## Speech-to-test (plain English → test)
 
 Type an attack in plain English, for example *"the attacker calls admin_drain and keeps the money"*. BitLens turns it into a test and runs it on the contract's real bytecode in the local sim.
@@ -178,17 +182,18 @@ The LLM has one job: translate the sentence into a **scenario JSON object** in t
 
 With neither key set, speech-to-test is off. Everything else works, including hand-written scenario JSON.
 
-**Verified live** (OpenRouter, `deepseek/deepseek-v3.2`, NEAR AI without a key so the chain fell straight through; `npm run attack -- <contract> --say "…" --print-scenario`, time = translation + scan + sim run):
+**Verified live** on a fresh clone of BitLens (OpenRouter, `deepseek/deepseek-v3.2`; NEAR AI had no key, so the chain fell straight through). Command: `npm run attack -- <contract> --say "…"`. Time = translation + scan + sim run.
 
 | Contract | Sentence | Result | Attempts | Time |
 |---|---|---|---|---|
-| vulnerable-vault | *the attacker calls admin_drain and keeps the money* | ❌ BROKEN, attacker +67.8015 NEAR | 1 | 11.5 s |
-| vulnerable-vault | *the attacker deposits 5 NEAR and withdraws twice in the same block; it must not get more than it deposited* | ❌ BROKEN, attacker +5.0000 NEAR | 1 | 15.8 s |
-| clean-vault | *a random account tries to make itself the owner* | ✅ HELD (`only the owner can call this`) | 1 | 11.8 s |
-| yield-escrow | *a user requests a payout of 5 NEAR, nobody approves it, and after the timeout the user must get the 5 NEAR back* | ❌ BROKEN, user −5.0000 NEAR stuck | 2 | 37.9 s |
-| risky-vault | *the attacker tries to upgrade the contract with its own code* | ✅ HELD (`only the owner can call this`) | 1 | 23.9 s |
+| vulnerable-vault | *the attacker calls admin_drain and keeps the money* | ❌ BROKEN, attacker +67.8015 NEAR | 1 | 8.9 s |
+| vulnerable-vault | *the attacker deposits 5 NEAR and withdraws twice in the same block; it must not get more than it deposited* | ❌ BROKEN, attacker +5.0000 NEAR | 2 | 27.7 s |
+| clean-vault | *a random account tries to make itself the owner* | ✅ HELD (`only the owner can call this`) | 1 | 9.9 s |
+| yield-escrow | *a user requests a payout of 5 NEAR, nobody approves it, and after the timeout the user must get the 5 NEAR back* | ❌ BROKEN, user −5.0000 NEAR stuck | 1 | 13.7 s |
+| risky-vault | *the attacker tries to upgrade the contract with its own code* | ✅ HELD (`only the owner can call this`) | 1 | 12.7 s |
+| risky-vault (via MCP `run_custom_attack`) | *the attacker adds its own full-access key to the contract* | ✅ HELD (`only the owner can call this`) | 1 | 15.4 s |
 
-The web flow (type → **Translate to a test** → **Run this scenario**) gave the same ❌ BROKEN +67.8015 NEAR for the first sentence, with a 15 s translation. The previous default (`qwen/qwen3.6-35b-a3b`, a reasoning model) took 20-47 s per translation and, before the polarity rule, wrote the first sentence's checks backwards.
+The web flow (type → **Translate to a test** → **Run this scenario**) gave the same ❌ BROKEN +67.8015 NEAR for the first sentence. A translation sometimes needs the repair round (2 attempts, ~30 s instead of ~10 s). The previous default (`qwen/qwen3.6-35b-a3b`, a reasoning model) took 20-47 s per translation and, before the polarity rule, wrote the first sentence's checks backwards.
 
 Try it:
 - **Web:** `OPEN_ROUTER_KEY=… npm run server` (and/or `NEAR_AI_API_KEY=…`) → scan `vulnerable-vault` → *Your own attack* → type the attack → **Translate to a test** (or Ctrl/⌘+Enter) → review the JSON → **Run this scenario** → ❌ BROKEN, with the drain's receipt trail.
