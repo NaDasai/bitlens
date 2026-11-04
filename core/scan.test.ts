@@ -63,17 +63,17 @@ test("drain-style method + transfer capability → HIGH", async () => {
 });
 
 test("demo contracts: clean LOW, risky HIGH (redeploy + add key), vulnerable HIGH (admin_drain)", async () => {
-  const clean = await scan("clean-vault.xray-demo");
+  const clean = await scan("clean-vault.bitlens-demo");
   assert.equal(clean.source, "demo");
   assert.equal(clean.risk.level, "low");
-  const risky = await scan("risky-vault.xray-demo");
+  const risky = await scan("risky-vault.bitlens-demo");
   assert.equal(risky.risk.level, "high");
   for (const id of ["deploy_contract", "add_full_access_key"])
     assert.equal(risky.capabilities.find((c) => c.id === id)?.confidence, "strong", id);
-  const vuln = await scan("vulnerable-vault.xray-demo");
+  const vuln = await scan("vulnerable-vault.bitlens-demo");
   assert.equal(vuln.risk.level, "high");
   assert.match(vuln.risk.reasons.join("\n"), /admin_drain/);
-  await assert.rejects(scan("nope.xray-demo"), /Unknown demo contract/);
+  await assert.rejects(scan("nope.bitlens-demo"), /Unknown demo contract/);
 });
 
 test("base58 code hash", () => {
@@ -90,7 +90,7 @@ before(async () => {
     let raw = "";
     for await (const c of req) raw += c;
     const { params } = JSON.parse(raw);
-    const reply = (body: unknown) => res.end(JSON.stringify({ jsonrpc: "2.0", id: "near-xray", ...body as object }));
+    const reply = (body: unknown) => res.end(JSON.stringify({ jsonrpc: "2.0", id: "bitlens", ...body as object }));
     const handlerError = (name: string, data: string) =>
       reply({ error: { name: "HANDLER_ERROR", cause: { name, info: {} }, code: -32000, message: "Server error", data } });
     if (params.account_id === "ghost.near") return handlerError("UNKNOWN_ACCOUNT", "account ghost.near does not exist while viewing");
@@ -106,7 +106,7 @@ before(async () => {
 after(() => srv.close());
 
 // Keep the offline code cache out of the repo during tests.
-process.env.XRAY_CACHE_DIR = mkdtempSync(join(tmpdir(), "xray-cache-"));
+process.env.BITLENS_CACHE_DIR = mkdtempSync(join(tmpdir(), "bitlens-cache-"));
 
 test("scan(): view_code → card, hash verified, keys counted", async () => {
   const card = await scan("vault.near", { rpcUrls: [rpcUrl] });

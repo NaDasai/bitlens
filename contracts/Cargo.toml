@@ -1,4 +1,4 @@
-# Demo contracts for NEAR X-Ray. Four native-NEAR vaults with the same
+# Demo contracts for BitLens. Four native-NEAR vaults with the same
 # user interface (deposit / withdraw / get_balance) so one set of attack
 # templates applies to all four:
 #   clean_vault      correct: every attack should be HELD

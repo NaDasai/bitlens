@@ -4,7 +4,7 @@ import { PRESETS, fillPreset, scan, suggestAttacks, validateScenario } from "./i
 
 test("every preset fills into a valid scenario for the demo contracts", async () => {
   assert.ok(Object.keys(PRESETS).length >= 6);
-  for (const id of ["clean-vault.xray-demo", "risky-vault.xray-demo", "vulnerable-vault.xray-demo", "yield-escrow.xray-demo"]) {
+  for (const id of ["clean-vault.bitlens-demo", "risky-vault.bitlens-demo", "vulnerable-vault.bitlens-demo", "yield-escrow.bitlens-demo"]) {
     for (const a of suggestAttacks(await scan(id))) {
       assert.equal(a.scenario.id, a.id);
       assert.ok(!JSON.stringify(a.scenario).includes("{{"), `${a.id}: unfilled placeholder`);

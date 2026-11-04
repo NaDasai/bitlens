@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { RpcError, scan } from "./index.js";
 
-const LIVE = process.env.XRAY_LIVE === "1";
+const LIVE = process.env.BITLENS_LIVE === "1";
 
 test("mainnet: wrap.near / token.sweat / aurora scan with verified code hash", { skip: !LIVE }, async () => {
   const expect: Record<string, { std: string; strong: string }> = {
@@ -22,6 +22,6 @@ test("mainnet: wrap.near / token.sweat / aurora scan with verified code hash", {
 });
 
 test("mainnet: UNKNOWN_ACCOUNT and NO_CONTRACT_CODE", { skip: !LIVE }, async () => {
-  await assert.rejects(scan("xray-no-such-account-4242.near"), (err: any) => err instanceof RpcError && err.code === "UNKNOWN_ACCOUNT");
+  await assert.rejects(scan("bitlens-no-such-account-4242.near"), (err: any) => err instanceof RpcError && err.code === "UNKNOWN_ACCOUNT");
   await assert.rejects(scan("root.near"), (err: any) => err instanceof RpcError && err.code === "NO_CONTRACT_CODE");
 });

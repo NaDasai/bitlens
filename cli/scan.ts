@@ -10,7 +10,7 @@ import { scan, scanWasm, toErrorPayload, type RiskCard } from "../core/index.js"
 
 function render(card: RiskCard): string {
   const L: string[] = [];
-  L.push(`\n=== NEAR X-Ray risk card: ${card.account_id} ===`);
+  L.push(`\n=== BitLens risk card: ${card.account_id} ===`);
   L.push(card.summary);
   L.push(
     `source: ${card.source}${card.cached_at ? ` (RPC unreachable; code fetched ${card.cached_at})` : ""}${card.rpc_url ? ` (${card.rpc_network} via ${card.rpc_url}, block ${card.block_height})` : ""}`,

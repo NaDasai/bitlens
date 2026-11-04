@@ -1,7 +1,7 @@
 /**
  * The Rust attack runner (runner/, over near-contract-sim), seen from Node.
  *
- * - `runSpec(spec)` shells out to the compiled `xray-runner` binary.
+ * - `runSpec(spec)` shells out to the compiled `bitlens-runner` binary.
  * - `startWarmup()` builds the runner if needed (the first build compiles
  *   nearcore: 10-30 min) and does one throwaway sim run, in the background.
  *   It never blocks; `engineStatus()` / `warmReady()` report progress, and
@@ -12,7 +12,7 @@ import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 export const RUNNER_DIR = fileURLToPath(new URL("../runner/", import.meta.url));
-export const RUNNER_BIN = process.env.XRAY_RUNNER_BIN ?? `${RUNNER_DIR}target/release/xray-runner`;
+export const RUNNER_BIN = process.env.BITLENS_RUNNER_BIN ?? `${RUNNER_DIR}target/release/bitlens-runner`;
 
 export type EngineState = "cold" | "building" | "warming" | "ready" | "failed";
 

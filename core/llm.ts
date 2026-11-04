@@ -1,7 +1,7 @@
 /**
  * The LLM behind speech-to-test (a typed plain-English attack description →
  * scenario JSON). Both providers speak the OpenAI chat-completions API and are
- * called in JSON mode. X-Ray analyses public on-chain bytecode; the LLM is
+ * called in JSON mode. BitLens analyses public on-chain bytecode; the LLM is
  * used only for the translation step and never writes code.
  *
  * 1. NEAR AI Cloud (primary): https://cloud-api.near.ai/v1
@@ -57,7 +57,7 @@ export function llmProviders(): Provider[] {
       baseUrl: (env("OPEN_ROUTER_BASE_URL") ?? DEFAULT_OPEN_ROUTER_BASE_URL).replace(/\/+$/, ""),
       model: env("OPEN_ROUTER_MODEL") ?? DEFAULT_OPEN_ROUTER_MODEL,
       // OpenRouter's optional app attribution headers.
-      headers: { "X-Title": "NEAR X-Ray" },
+      headers: { "X-Title": "BitLens" },
     },
   ];
 }

@@ -25,10 +25,10 @@ else bad("attack runner not built: run `npm run build:runner` (first build 10-30
 
 // 2. Demo contracts: the story the demo tells
 const WANT: Record<string, string> = {
-  "clean-vault.xray-demo": "safe",
-  "risky-vault.xray-demo": "caution",
-  "vulnerable-vault.xray-demo": "dangerous",
-  "yield-escrow.xray-demo": "dangerous",
+  "clean-vault.bitlens-demo": "safe",
+  "risky-vault.bitlens-demo": "caution",
+  "vulnerable-vault.bitlens-demo": "dangerous",
+  "yield-escrow.bitlens-demo": "dangerous",
 };
 for (const id of Object.keys(DEMO_CONTRACTS)) {
   try {
@@ -77,7 +77,7 @@ try {
 // 6. MCP server: starts and lists its tools
 try {
   const transport = new StdioClientTransport({ command: `${root}node_modules/.bin/tsx`, args: [`${root}mcp/server.ts`], stderr: "ignore" });
-  const client = new Client({ name: "xray-preflight", version: "0.0.0" });
+  const client = new Client({ name: "bitlens-preflight", version: "0.0.0" });
   await client.connect(transport);
   const { tools } = await client.listTools();
   const names = tools.map((t) => t.name).sort().join(", ");

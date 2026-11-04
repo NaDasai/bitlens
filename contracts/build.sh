@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Build the four demo contracts to contracts/res/*.wasm (committed, so the
-# rest of NEAR X-Ray runs without cargo-near). Needs cargo-near 0.22 and
+# rest of BitLens runs without cargo-near). Needs cargo-near 0.22 and
 # Rust 1.95.0 with wasm32-unknown-unknown (see rust-toolchain.toml).
 set -euo pipefail
 cd "$(dirname "$0")"

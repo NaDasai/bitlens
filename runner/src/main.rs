@@ -1,7 +1,7 @@
-//! NEAR X-Ray attack runner.
+//! BitLens attack runner.
 //!
-//!   xray-runner <spec.json | ->        # prints a JSON report on stdout
-//!   xray-runner --validate <file|->    # checks one scenario JSON, prints {"ok":..}
+//!   bitlens-runner <spec.json | ->        # prints a JSON report on stdout
+//!   bitlens-runner --validate <file|->    # checks one scenario JSON, prints {"ok":..}
 //!
 //! Deploys the contract's real WASM in near-contract-sim (nearcore's own
 //! runtime, in process), builds a base world (owner, victim, attacker, user),

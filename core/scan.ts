@@ -266,7 +266,7 @@ export async function scanWithCode(accountId: string, opts?: RpcOptions): Promis
   return { card, wasm: code.wasm };
 }
 
-/** Address → risk card. `*.xray-demo` ids resolve to the bundled demo contracts. */
+/** Address → risk card. `*.bitlens-demo` ids resolve to the bundled demo contracts. */
 export async function scan(accountId: string, opts?: RpcOptions): Promise<RiskCard> {
   return (await scanWithCode(accountId, opts)).card;
 }

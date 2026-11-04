@@ -126,6 +126,6 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   // Warm the attack engine in the background; never block startup.
   void startWarmup((m) => console.log(m), warmupSpec);
   server.listen(PORT, () => {
-    console.log(`NEAR X-Ray backend on http://localhost:${PORT}  (try: curl "http://localhost:${PORT}/scan?account_id=wrap.near")`);
+    console.log(`BitLens backend on http://localhost:${PORT}  (try: curl "http://localhost:${PORT}/scan?account_id=wrap.near")`);
   });
 }

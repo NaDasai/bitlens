@@ -1,4 +1,4 @@
-# NEAR X-Ray: notes for Claude
+# BitLens: notes for Claude
 
 ## Commits (hard rule)
 - Commit as the repo owner, never as Claude:
@@ -20,9 +20,9 @@
   Keep the Rust and zod schemas in sync. The LLM (NEAR AI Cloud, fallback OpenRouter)
   only translates typed English into scenario JSON; never let it produce code.
   Validate its output. No voice input: speech-to-test means typed words.
-- No privacy claims about NEAR AI: X-Ray analyses public bytecode; NEAR AI is just the
+- No privacy claims about NEAR AI: BitLens analyses public bytecode; NEAR AI is just the
   ecosystem LLM for the translation step.
-- Never report BROKEN or HELD without evidence from the sim; when X-Ray could
+- Never report BROKEN or HELD without evidence from the sim; when BitLens could
   not drive the contract, the honest answer is INCONCLUSIVE.
 
 ## Checks before committing

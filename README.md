@@ -1,6 +1,6 @@
-# NEAR X-Ray
+# BitLens
 
-**A security scanner for NEAR smart contracts. Paste a mainnet account and X-Ray reads the deployed WASM, tells you what the contract *can* do, then attacks the real bytecode in a local NEAR runtime and reports which defences held and which broke. It works without source code, for people (web UI) and for AI agents (MCP server).**
+**A security scanner for NEAR smart contracts. Paste a mainnet account and BitLens reads the deployed WASM, tells you what the contract *can* do, then attacks the real bytecode in a local NEAR runtime and reports which defences held and which broke. It works without source code, for people (web UI) and for AI agents (MCP server).**
 
 Hackathon track: AI Security & Defense.
 
@@ -47,10 +47,10 @@ account id ─view_code RPC─▶ WASM ─▶ ① risk card ─▶ ② attacks i
 
 1. `npm install`
 2. `npm test` → `# pass 27`, `# fail 0` (account-id validation, capability detection, RPC errors and the offline fallback against a fake RPC, attack selection, verdict rules, scenario validation, and speech-to-test with its NEAR AI → OpenRouter fallback against two fake LLM servers; no network).
-3. `npm run build:runner` (the first-build warning above applies) → ends with `Finished \`release\` profile [optimized]`; the binary is `runner/target/release/xray-runner`. You can skip this: the server and MCP server start the same build in the background if the binary is missing.
+3. `npm run build:runner` (the first-build warning above applies) → ends with `Finished \`release\` profile [optimized]`; the binary is `runner/target/release/bitlens-runner`. You can skip this: the server and MCP server start the same build in the background if the binary is missing.
 4. `npm run test:sim` → `# pass 8`, ~2 s. Pins the status of **every** scenario on all four demo contracts, plus the risk level and verdict, through the real engine. It also runs custom scenario JSON end to end, and checks that the runner rejects malformed scenarios on its own. If it passes, the demo tells the same story.
-   By hand: `npm run attack -- vulnerable-vault.xray-demo` → 8 scenarios, `Summary: 6 held, 2 broken, 0 inconclusive`, `VERDICT: DANGEROUS`, exit code 3; `npm run attack -- clean-vault.xray-demo` → `7 held, 0 broken`, `VERDICT: SAFE`, exit code 0.
-5. `npm run server` → `NEAR X-Ray backend on http://localhost:8787` and, a few seconds later, `[engine] attack engine ready`.
+   By hand: `npm run attack -- vulnerable-vault.bitlens-demo` → 8 scenarios, `Summary: 6 held, 2 broken, 0 inconclusive`, `VERDICT: DANGEROUS`, exit code 3; `npm run attack -- clean-vault.bitlens-demo` → `7 held, 0 broken`, `VERDICT: SAFE`, exit code 0.
+5. `npm run server` → `BitLens backend on http://localhost:8787` and, a few seconds later, `[engine] attack engine ready`.
 6. Open **http://localhost:8787** and follow the demo path below.
 7. **Before a live demo:** `npm run preflight` (~4 s) → a ✔/⚠/✘ checklist ending in `Ready to demo.`:
    - Node version and runner build.
@@ -67,7 +67,7 @@ account id ─view_code RPC─▶ WASM ─▶ ① risk card ─▶ ② attacks i
 1. Click **clean-vault** → green **LOW** card. In *Attack proof*, click **Run 7 attacks** → **SAFE**, all ✅ HELD (each one shows why: "only the owner can call this", "Method on_withdraw is private"…).
 2. Click **vulnerable-vault** → red **HIGH** card, first reason: `admin_drain` looks like a fund-drain method.
 3. **Run 8 attacks** → **DANGEROUS**:
-   - ❌ `admin_drain`: attacker.near → contract `call admin_drain` ✓, contract → attacker.near `Transfer 67.8015 NEAR` ✓, net NEAR: `attacker.near +67.8015`, `vulnerable-vault.xray-demo −67.8015`.
+   - ❌ `admin_drain`: attacker.near → contract `call admin_drain` ✓, contract → attacker.near `Transfer 67.8015 NEAR` ✓, net NEAR: `attacker.near +67.8015`, `vulnerable-vault.bitlens-demo −67.8015`.
    - ❌ double-withdraw: deposit 5 NEAR, two same-block withdraws, 10 NEAR back.
    - Each result has the receipt sequence and a collapsible full receipt trace from the sim.
 4. Click **yield-escrow** → green **LOW** card: nothing in the bytecode looks dangerous. **Run 9 attacks** → **DANGEROUS**:
@@ -75,9 +75,9 @@ account id ─view_code RPC─▶ WASM ─▶ ① risk card ─▶ ② attacks i
    - **The scan alone would have passed it; the attack proves the bug.**
 5. Paste `wrap.near` → real mainnet code, **LOW**; attacks → **SAFE** (4 held, 1 not applicable).
 
-**Venue wifi down?** Every successful fetch saves the code to `.cache/code/` (gitignored). If every RPC endpoint is unreachable, X-Ray analyses that copy instead. The card says so in yellow ("⚠ RPC unreachable: showing the copy of this code fetched …"), `source` is `"cache"`, and MCP results carry an `offline_cache` note. Only *unreachable* falls back: "unknown account" / "no contract" answers from a live RPC are never masked. The four demo contracts never need the network.
+**Venue wifi down?** Every successful fetch saves the code to `.cache/code/` (gitignored). If every RPC endpoint is unreachable, BitLens analyses that copy instead. The card says so in yellow ("⚠ RPC unreachable: showing the copy of this code fetched …"), `source` is `"cache"`, and MCP results carry an `offline_cache` note. Only *unreachable* falls back: "unknown account" / "no contract" answers from a live RPC are never masked. The four demo contracts never need the network.
 
-Links can be shared: `http://localhost:8787/?account=vulnerable-vault.xray-demo`.
+Links can be shared: `http://localhost:8787/?account=vulnerable-vault.bitlens-demo`.
 
 ## What you will see
 
@@ -85,10 +85,10 @@ Verified output (Nov 2026). Mainnet code is fetched read-only and attacked **onl
 
 | Account | Risk card | Attacks | Verdict |
 |---|---|---|---|
-| `clean-vault.xray-demo` | LOW | 7 held | **SAFE** |
-| `risky-vault.xray-demo` | HIGH: 🔴 redeploy (`upgrade`), 🔴 add full-access key (`add_full_access_key`) | 9 held (both are owner-gated) | **CAUTION** (powerful admin, correctly gated) |
-| `vulnerable-vault.xray-demo` | HIGH: `admin_drain` + can send NEAR | **2 broken** (drain, double-spend), 6 held | **DANGEROUS** |
-| `yield-escrow.xray-demo` | LOW: sends NEAR, uses yield/resume; nothing dangerous-looking | **1 broken** (timeout strands 5 NEAR), 8 held | **DANGEROUS** |
+| `clean-vault.bitlens-demo` | LOW | 7 held | **SAFE** |
+| `risky-vault.bitlens-demo` | HIGH: 🔴 redeploy (`upgrade`), 🔴 add full-access key (`add_full_access_key`) | 9 held (both are owner-gated) | **CAUTION** (powerful admin, correctly gated) |
+| `vulnerable-vault.bitlens-demo` | HIGH: `admin_drain` + can send NEAR | **2 broken** (drain, double-spend), 6 held | **DANGEROUS** |
+| `yield-escrow.bitlens-demo` | LOW: sends NEAR, uses yield/resume; nothing dangerous-looking | **1 broken** (timeout strands 5 NEAR), 8 held | **DANGEROUS** |
 | `wrap.near` | LOW: 15 methods, NEP-141/145/148, sends NEAR via `near_withdraw`, 0 full-access keys | 4 held, 1 n/a | **SAFE** |
 | `token.sweat` | HIGH: 🔴 redeploy (`up_deploy_code`), 16 admin-looking `acl_*` methods | 15 inconclusive (could not initialise) | **CAUTION** |
 | `aurora` | HIGH: 🔴 add full-access key (`attach_full_access_key`), 🔴 redeploy (`upgrade`), 1 full-access key on the account | 20 inconclusive (could not initialise) | **CAUTION** |
@@ -101,7 +101,7 @@ The four demo contracts (`contracts/*/src/lib.rs`, WASM committed in `contracts/
 
 ## MCP server (for AI agents)
 
-An agent that is about to call, deposit into or approve a NEAR contract can ask X-Ray first. The server speaks stdio with the official `@modelcontextprotocol/sdk`.
+An agent that is about to call, deposit into or approve a NEAR contract can ask BitLens first. The server speaks stdio with the official `@modelcontextprotocol/sdk`.
 
 | Tool | Does | Speed |
 |---|---|---|
@@ -118,9 +118,9 @@ Every tool is read-only (`readOnlyHint`). Inputs are untrusted: `account_id` is 
 ```json
 {
   "mcpServers": {
-    "near-xray": {
-      "command": "/ABSOLUTE/PATH/TO/near-xray/node_modules/.bin/tsx",
-      "args": ["/ABSOLUTE/PATH/TO/near-xray/mcp/server.ts"]
+    "bitlens": {
+      "command": "/ABSOLUTE/PATH/TO/bitlens/node_modules/.bin/tsx",
+      "args": ["/ABSOLUTE/PATH/TO/bitlens/mcp/server.ts"]
     }
   }
 }
@@ -129,16 +129,16 @@ Every tool is read-only (`readOnlyHint`). Inputs are untrusted: `account_id` is 
 That block goes in Claude Desktop's `claude_desktop_config.json` (or any MCP client's equivalent). For Claude Code:
 
 ```bash
-claude mcp add near-xray -- "$PWD/node_modules/.bin/tsx" "$PWD/mcp/server.ts"
+claude mcp add bitlens -- "$PWD/node_modules/.bin/tsx" "$PWD/mcp/server.ts"
 ```
 
-`claude mcp list` → `near-xray: … - ✓ Connected`.
+`claude mcp list` → `bitlens: … - ✓ Connected`.
 
 **Verified agent run** (headless Claude Code with only this server's tools allowed):
 
-> *Prompt:* "I'm about to deposit 20 NEAR into the contract vulnerable-vault.xray-demo. Is that safe?"
+> *Prompt:* "I'm about to deposit 20 NEAR into the contract vulnerable-vault.bitlens-demo. Is that safe?"
 >
-> *Agent:* **No, don't deposit.** NEAR X-Ray rates `vulnerable-vault.xray-demo` **dangerous** after two attacks succeeded in its local simulator.
+> *Agent:* **No, don't deposit.** BitLens rates `vulnerable-vault.bitlens-demo` **dangerous** after two attacks succeeded in its local simulator.
 > 1. Anyone can call `admin_drain`: an attacker account emptied the whole vault (67.8 NEAR) with no owner check.
 > 2. Two `withdraw` calls in the same block both paid out (5 NEAR deposited, 10 NEAR back), with the extra coming from other depositors' money.
 
@@ -146,12 +146,12 @@ Without an agent: `node_modules/.bin/tsx scripts/mcp-smoke.ts --wait` drives the
 
 ## Speech-to-test (plain English → test)
 
-Type an attack in plain English, for example *"the attacker calls admin_drain and keeps the money"*. X-Ray turns it into a test and runs it on the contract's real bytecode in the local sim.
+Type an attack in plain English, for example *"the attacker calls admin_drain and keeps the money"*. BitLens turns it into a test and runs it on the contract's real bytecode in the local sim.
 
 The LLM has one job: translate the sentence into a **scenario JSON object** in the [format below](#scenario-json). It never writes code. The JSON then runs through the same runner as the built-in presets.
 
 - **Providers:** both speak the OpenAI chat-completions API, and every request uses `response_format: {"type": "json_object"}`.
-  1. [NEAR AI Cloud](https://cloud.near.ai) (`https://cloud-api.near.ai/v1`) is the primary, used here simply as the NEAR ecosystem's LLM for the translation step. X-Ray only analyses public on-chain bytecode.
+  1. [NEAR AI Cloud](https://cloud.near.ai) (`https://cloud-api.near.ai/v1`) is the primary, used here simply as the NEAR ecosystem's LLM for the translation step. BitLens only analyses public on-chain bytecode.
   2. [OpenRouter](https://openrouter.ai) (`https://openrouter.ai/api/v1`) is the fallback. It is used when NEAR AI has no key, rejects the key, is unreachable or returns an error. After a failure NEAR AI is skipped for 5 minutes, so each request doesn't wait on it again. The UI, CLI and MCP say which provider answered and why a fallback happened.
 - **Prompt:** the model sees the scenario language, this contract's real method list and capabilities, and two of its presets as worked examples.
 - **Untrusted output:** what comes back is
@@ -194,9 +194,9 @@ Try it:
 - **Web:** `OPEN_ROUTER_KEY=… npm run server` (and/or `NEAR_AI_API_KEY=…`) → scan `vulnerable-vault` → *Your own attack* → type the attack → **Translate to a test** (or Ctrl/⌘+Enter) → review the JSON → **Run this scenario** → ❌ BROKEN, with the drain's receipt trail.
 - **CLI:**
   ```bash
-  npm run attack -- vulnerable-vault.xray-demo --say "the attacker calls admin_drain and keeps the money" --print-scenario
+  npm run attack -- vulnerable-vault.bitlens-demo --say "the attacker calls admin_drain and keeps the money" --print-scenario
   ```
-- **No key:** `npm run attack -- vulnerable-vault.xray-demo --scenario scenarios/examples/drain.json` → ❌ BROKEN, `attacker.near called admin_drain and walked away with +67.8015 NEAR.` In the web UI, pick *start from a preset…*, edit the JSON and run it.
+- **No key:** `npm run attack -- vulnerable-vault.bitlens-demo --scenario scenarios/examples/drain.json` → ❌ BROKEN, `attacker.near called admin_drain and walked away with +67.8015 NEAR.` In the web UI, pick *start from a preset…*, edit the JSON and run it.
 - **MCP:** `run_custom_attack` with `description` (plain English, via the LLM) or `scenario` (JSON the agent wrote).
 
 ## Scenario JSON
@@ -235,13 +235,13 @@ Every attack is one JSON object: the six built-in presets (`scenarios/presets/*.
 | `step_succeeded` / `step_failed` / `any_succeeded` | call outcomes |
 | `transfer_failed`, `callback_after_transfer`, `completed`, `yielded` | receipt-level facts |
 
-`message` and `explain` texts can use `{net.attacker}`, `{net.contract}`, `{error.<step>}`, `{status.<step>}`, `{tgas}`, `{sweep}` and `{deadline}`. `xray-runner --validate file.json` checks a scenario on its own.
+`message` and `explain` texts can use `{net.attacker}`, `{net.contract}`, `{error.<step>}`, `{status.<step>}`, `{tgas}`, `{sweep}` and `{deadline}`. `bitlens-runner --validate file.json` checks a scenario on its own.
 
 ## How it works
 
 ### ① Capability scan (instant, no source needed)
 
-A NEAR contract can only act through runtime host functions it imports. **If the import is absent, the contract cannot do the action.** X-Ray reads `WebAssembly.Module.imports` from the deployed code:
+A NEAR contract can only act through runtime host functions it imports. **If the import is absent, the contract cannot do the action.** BitLens reads `WebAssembly.Module.imports` from the deployed code:
 
 | Host import | Flag |
 |---|---|
@@ -315,8 +315,8 @@ CLI:
 Environment:
 - `NEAR_RPC_URL`: comma-separated RPC URLs. Testnet works too.
 - `PORT`: default 8787.
-- `XRAY_RUNNER_BIN`: path to a prebuilt runner.
-- `XRAY_CACHE_DIR`: where the offline code copies go (default `.cache/code/`).
+- `BITLENS_RUNNER_BIN`: path to a prebuilt runner.
+- `BITLENS_CACHE_DIR`: where the offline code copies go (default `.cache/code/`).
 - `HTTPS_PROXY` / `NO_PROXY`: honoured.
 
 ## Repo layout
@@ -336,9 +336,9 @@ scripts/    preflight.ts (pre-demo checklist), mcp-smoke.ts, fetch-reference-was
 
 ## Limitations (honest)
 
-- **Never touches mainnet state.** X-Ray only makes RPC *view* calls. Attacks run in a local, in-process runtime, never against a live contract, and nothing is ever signed or sent.
+- **Never touches mainnet state.** BitLens only makes RPC *view* calls. Attacks run in a local, in-process runtime, never against a live contract, and nothing is ever signed or sent.
 - **Bytecode only, no source.** A present import means the code *can* reach an action, not that anyone can trigger it. Method-name heuristics are hints. An absent import is a proof.
-- **Arguments are guessed.** X-Ray cannot always build valid arguments or initialise complex contracts (aurora, token.sweat). It reports INCONCLUSIVE in those cases and never claims HELD from a rejection it cannot explain. A SAFE verdict means "the six templates found nothing", not "audited".
+- **Arguments are guessed.** BitLens cannot always build valid arguments or initialise complex contracts (aurora, token.sweat). It reports INCONCLUSIVE in those cases and never claims HELD from a rejection it cannot explain. A SAFE verdict means "the six templates found nothing", not "audited".
 - **Templates, not fuzzing.** Six scenario templates aimed at common NEAR bug classes, driven by the risk card. Logic bugs outside them (pricing, oracle, cross-contract token flows with real counterparties) are not tested. Other contracts the target calls are not deployed, so those calls fail in the sim.
 - **Yield detection needs a hint in the method name.** Template 6 picks methods named like `request`/`sign`/`wait`/`ask`. A yield started from a differently named method is not attacked. It is verified on yield-escrow, both the buggy and the fixed build.
 - **Offline cache is a last-known copy.** If the contract was redeployed since the cached fetch, a cached card describes the old code. The card shows the fetch time and block height.

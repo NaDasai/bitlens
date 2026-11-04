@@ -12,8 +12,8 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { AccessKeySummary } from "./scan.js";
 
-/** Read at call time so tests (and users) can redirect it with $XRAY_CACHE_DIR. */
-export const cacheDir = () => process.env.XRAY_CACHE_DIR ?? fileURLToPath(new URL("../.cache/code/", import.meta.url));
+/** Read at call time so tests (and users) can redirect it with $BITLENS_CACHE_DIR. */
+export const cacheDir = () => process.env.BITLENS_CACHE_DIR ?? fileURLToPath(new URL("../.cache/code/", import.meta.url));
 
 export interface CachedCode {
   wasm: Uint8Array;
