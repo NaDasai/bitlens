@@ -12,7 +12,7 @@
     "scan": "tsx cli/scan.ts",
     "server": "tsx server/index.ts",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test core/scan.test.ts core/attacks.test.ts core/scenario.test.ts core/speech.test.ts",
+    "test": "tsx --test core/scan.test.ts core/attacks.test.ts core/scenario.test.ts core/textToTest.test.ts",
     "test:live": "BITLENS_LIVE=1 tsx --test core/live.test.ts",
     "attack": "tsx cli/attack.ts",
     "build:runner": "cd runner && cargo build --release --locked",

@@ -8,8 +8,8 @@
  *   GET  /engine                     attack-engine warm-up status
  *   POST /attack {"account_id","scenarios":[…]}  run custom scenario JSON instead
  *   POST /translate {"account_id","sentence"}    English → scenario JSON (NEAR AI Cloud, fallback OpenRouter)
- *   GET  /llm                        speech-to-test LLM configuration (never the key)
- *   GET  /       static web UI (web/)
+ *   GET  /llm                        text-to-test LLM configuration (never the key)
+ *   GET  /       landing page;  GET /app  the web app (static, web/)
  */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { readFile } from "node:fs/promises";
@@ -60,7 +60,8 @@ async function readJson(req: IncomingMessage): Promise<any> {
 }
 
 async function serveStatic(pathname: string, res: ServerResponse) {
-  const rel = normalize(pathname === "/" ? "/index.html" : pathname).replace(/^(\.\.[/\\])+/, "");
+  const page = pathname === "/" ? "/index.html" : pathname === "/app" || pathname === "/app/" ? "/app.html" : pathname;
+  const rel = normalize(page).replace(/^(\.\.[/\\])+/, "");
   const file = join(WEB_DIR, rel);
   if (!file.startsWith(WEB_DIR)) return sendJson(res, 403, { error: { code: "FORBIDDEN", message: "forbidden" } });
   try {

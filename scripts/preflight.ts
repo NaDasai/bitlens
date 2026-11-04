@@ -59,12 +59,12 @@ for (const id of ["wrap.near", "token.sweat", "aurora"]) {
   }
 }
 
-// 4. Speech-to-test (optional)
+// 4. Text-to-test (optional)
 const ai = llmStatus();
 const chain = ai.providers.map((p) => `${p.name} ${p.configured ? `✓ (${p.model})` : "no key"}`).join(" → ");
 ai.configured
-  ? ok(`speech-to-test: ${chain}`)
-  : warn("speech-to-test: no LLM key (set NEAR_AI_API_KEY and/or OPEN_ROUTER_KEY); the custom-attack box accepts hand-written scenario JSON only");
+  ? ok(`text-to-test: ${chain}`)
+  : warn("text-to-test: no LLM key (set NEAR_AI_API_KEY and/or OPEN_ROUTER_KEY); the custom-attack box accepts hand-written scenario JSON only");
 
 // 5. Web server port
 try {

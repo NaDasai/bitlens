@@ -20,7 +20,7 @@ account id ─view_code RPC─▶ WASM ─▶ ① risk card ─▶ ② attacks i
 - [Quickstart](#quickstart)
 - [What you will see](#what-you-will-see)
 - [MCP server (for AI agents)](#mcp-server-for-ai-agents)
-- [Speech-to-test (plain English → test)](#speech-to-test-plain-english--test)
+- [Text-to-test (plain English → test)](#text-to-test-plain-english--test)
 - [Scenario JSON](#scenario-json)
 - [How it works](#how-it-works)
 - [Attack catalogue](#attack-catalogue)
@@ -46,23 +46,23 @@ account id ─view_code RPC─▶ WASM ─▶ ① risk card ─▶ ② attacks i
 ### Steps (each with expected output)
 
 1. `npm install`
-2. `npm test` → `# pass 27`, `# fail 0` (account-id validation, capability detection, RPC errors and the offline fallback against a fake RPC, attack selection, verdict rules, scenario validation, and speech-to-test with its NEAR AI → OpenRouter fallback against two fake LLM servers; no network).
+2. `npm test` → `# pass 27`, `# fail 0` (account-id validation, capability detection, RPC errors and the offline fallback against a fake RPC, attack selection, verdict rules, scenario validation, and text-to-test with its NEAR AI → OpenRouter fallback against two fake LLM servers; no network).
 3. `npm run build:runner` (the first-build warning above applies) → ends with `Finished \`release\` profile [optimized]`; the binary is `runner/target/release/bitlens-runner`. You can skip this: the server and MCP server start the same build in the background if the binary is missing.
 4. `npm run test:sim` → `# pass 8`, ~2 s. Pins the status of **every** scenario on all four demo contracts, plus the risk level and verdict, through the real engine. It also runs custom scenario JSON end to end, and checks that the runner rejects malformed scenarios on its own. If it passes, the demo tells the same story.
    By hand: `npm run attack -- vulnerable-vault.bitlens-demo` → 8 scenarios, `Summary: 6 held, 2 broken, 0 inconclusive`, `VERDICT: DANGEROUS`, exit code 3; `npm run attack -- clean-vault.bitlens-demo` → `7 held, 0 broken`, `VERDICT: SAFE`, exit code 0.
 5. `npm run server` → `BitLens backend on http://localhost:8787` and, a few seconds later, `[engine] attack engine ready`.
-6. Open **http://localhost:8787** and follow the demo path below.
+6. Open **http://localhost:8787** for the landing page (what BitLens does, the MCP server and how to add it), then **Open the app**, or go straight to **http://localhost:8787/app**, and follow the demo path below.
 7. **Before a live demo:** `npm run preflight` (~4 s) → a ✔/⚠/✘ checklist ending in `Ready to demo.`:
    - Node version and runner build.
    - All four demo verdicts.
    - Live RPC for wrap.near / token.sweat / aurora. This also refreshes the offline copy of their code (see below).
    - Port 8787 free.
-   - LLM keys for speech-to-test: NEAR AI → OpenRouter (⚠ if neither is set; speech-to-test is optional).
+   - LLM keys for text-to-test: NEAR AI → OpenRouter (⚠ if neither is set; text-to-test is optional).
    - MCP server starts and lists 5 tools.
 
    Exit code 1 if anything the demo needs is broken.
 
-**Verified from a fresh clone of `NaDasai/bitlens`:** `npm ci` (0 vulnerabilities), typecheck clean, `npm test` 27 pass, `npm run build:runner` 11 min 43 s, `npm run test:sim` 8 pass, `npm run preflight` → `Ready to demo.` Demo verdicts: clean-vault SAFE, risky-vault CAUTION, vulnerable-vault DANGEROUS, yield-escrow DANGEROUS. Live scans of wrap.near, token.sweat and aurora work. The web UI, the CLI and the MCP server were each checked end to end ([speech-to-test results](#speech-to-test-plain-english--test), [MCP](#mcp-server-for-ai-agents)).
+**Verified from a fresh clone of `NaDasai/bitlens`:** `npm ci` (0 vulnerabilities), typecheck clean, `npm test` 27 pass, `npm run build:runner` 11 min 43 s, `npm run test:sim` 8 pass, `npm run preflight` → `Ready to demo.` Demo verdicts: clean-vault SAFE, risky-vault CAUTION, vulnerable-vault DANGEROUS, yield-escrow DANGEROUS. Live scans of wrap.near, token.sweat and aurora work. The web UI, the CLI and the MCP server were each checked end to end ([text-to-test results](#text-to-test-plain-english--test), [MCP](#mcp-server-for-ai-agents)).
 8. *Optional, live mainnet:* `npm run test:live` → `# pass 2` (scans wrap.near, token.sweat and aurora; checks each locally computed code hash against the RPC's; checks the `UNKNOWN_ACCOUNT` / `NO_CONTRACT_CODE` errors).
 
 ### Demo path (web)
@@ -79,7 +79,7 @@ account id ─view_code RPC─▶ WASM ─▶ ① risk card ─▶ ② attacks i
 
 **Venue wifi down?** Every successful fetch saves the code to `.cache/code/` (gitignored). If every RPC endpoint is unreachable, BitLens analyses that copy instead. The card says so in yellow ("⚠ RPC unreachable: showing the copy of this code fetched …"), `source` is `"cache"`, and MCP results carry an `offline_cache` note. Only *unreachable* falls back: "unknown account" / "no contract" answers from a live RPC are never masked. The four demo contracts never need the network.
 
-Links can be shared: `http://localhost:8787/?account=vulnerable-vault.bitlens-demo`.
+Links can be shared: `http://localhost:8787/app?account=vulnerable-vault.bitlens-demo` (old `/?account=…` links forward to `/app`).
 
 ## What you will see
 
@@ -146,9 +146,9 @@ claude mcp add bitlens -- "$PWD/node_modules/.bin/tsx" "$PWD/mcp/server.ts"
 
 Without an agent: `node_modules/.bin/tsx scripts/mcp-smoke.ts --wait` drives the server with the SDK client. It lists the 5 tools, checks that a bad id is rejected, lists attacks, then calls `assess_contract` until the engine is warm → `DANGEROUS`.
 
-**Verified on a fresh clone:** the server starts as `bitlens` with all 5 tools. `scan_contract wrap.near` returns the live card (risk LOW). A bad id comes back as `isError` with `INVALID_ACCOUNT_ID`. `assess_contract vulnerable-vault.bitlens-demo` returns DANGEROUS. `run_custom_attack` returns HELD on clean-vault with the takeover scenario JSON (`scenarios/examples/takeover.json`), and HELD on risky-vault with a plain-English attack (see the table under [Speech-to-test](#speech-to-test-plain-english--test)).
+**Verified on a fresh clone:** the server starts as `bitlens` with all 5 tools. `scan_contract wrap.near` returns the live card (risk LOW). A bad id comes back as `isError` with `INVALID_ACCOUNT_ID`. `assess_contract vulnerable-vault.bitlens-demo` returns DANGEROUS. `run_custom_attack` returns HELD on clean-vault with the takeover scenario JSON (`scenarios/examples/takeover.json`), and HELD on risky-vault with a plain-English attack (see the table under [Text-to-test](#text-to-test-plain-english--test)).
 
-## Speech-to-test (plain English → test)
+## Text-to-test (plain English → test)
 
 Type an attack in plain English, for example *"the attacker calls admin_drain and keeps the money"*. BitLens turns it into a test and runs it on the contract's real bytecode in the local sim.
 
@@ -180,7 +180,7 @@ The LLM has one job: translate the sentence into a **scenario JSON object** in t
 | `LLM_TIMEOUT_S` | `120` | per-request timeout |
 | `LLM_MAX_TOKENS` | `8192` | output cap per request (without one, OpenRouter reserves the model's full output budget and refuses low-credit keys with HTTP 402) |
 
-With neither key set, speech-to-test is off. Everything else works, including hand-written scenario JSON.
+With neither key set, text-to-test is off. Everything else works, including hand-written scenario JSON.
 
 **Verified live** on a fresh clone of BitLens (OpenRouter, `deepseek/deepseek-v3.2`; NEAR AI had no key, so the chain fell straight through). Command: `npm run attack -- <contract> --say "…"`. Time = translation + scan + sim run.
 
@@ -206,7 +206,7 @@ Try it:
 
 ## Scenario JSON
 
-Every attack is one JSON object: the six built-in presets (`scenarios/presets/*.json`, filled in from the risk card), the examples in `scenarios/examples/`, and whatever speech-to-test produces. The Rust runner (`runner/src/interp.rs`) maps each step onto a near-contract-sim operation against the contract under test. It then evaluates the checks in order: the first one that fails decides the result (BROKEN unless the check says `"else": "inconclusive"` or `"not_applicable"`). If all hold, the result is HELD.
+Every attack is one JSON object: the six built-in presets (`scenarios/presets/*.json`, filled in from the risk card), the examples in `scenarios/examples/`, and whatever text-to-test produces. The Rust runner (`runner/src/interp.rs`) maps each step onto a near-contract-sim operation against the contract under test. It then evaluates the checks in order: the first one that fails decides the result (BROKEN unless the check says `"else": "inconclusive"` or `"not_applicable"`). If all hold, the result is HELD.
 
 ```json
 {
@@ -327,11 +327,11 @@ Environment:
 ## Repo layout
 
 ```
-core/       the one engine: RPC, scan, capability rules, attack selection, scenario schema + presets, speech-to-test (LLM: NEAR AI → OpenRouter), verdict, runner bridge
+core/       the one engine: RPC, scan, capability rules, attack selection, scenario schema + presets, text-to-test (LLM: NEAR AI → OpenRouter), verdict, runner bridge
 server/     HTTP front door (thin) + static web UI from web/
 mcp/        MCP front door (thin, stdio)
 cli/        scan / attack CLIs (thin)
-web/        static HTML/CSS/JS; all text rendered via textContent
+web/        static HTML/CSS/JS: index.html (landing page), app.html + app.js (the app, at /app), logo.svg; all app text rendered via textContent
 runner/     Rust scenario interpreter over near-contract-sim (scenario.rs: format + validation, interp.rs: execution)
 scenarios/  presets/*.json (the six attack templates as canned scenario JSON), examples/*.json
 contracts/  clean / risky / vulnerable / yield-escrow demo contracts (near-sdk 5.29) + res/*.wasm
@@ -347,6 +347,6 @@ scripts/    preflight.ts (pre-demo checklist), mcp-smoke.ts, fetch-reference-was
 - **Templates, not fuzzing.** Six scenario templates aimed at common NEAR bug classes, driven by the risk card. Logic bugs outside them (pricing, oracle, cross-contract token flows with real counterparties) are not tested. Other contracts the target calls are not deployed, so those calls fail in the sim.
 - **Yield detection needs a hint in the method name.** Template 6 picks methods named like `request`/`sign`/`wait`/`ask`. A yield started from a differently named method is not attacked. It is verified on yield-escrow, both the buggy and the fixed build.
 - **Offline cache is a last-known copy.** If the contract was redeployed since the cached fetch, a cached card describes the old code. The card shows the fetch time and block height.
-- **Speech-to-test is only as good as the translation.** The LLM can misread a sentence. That is why the JSON is shown, and can be edited, before it runs, and why a result only means what its checks say. The provider chain is unit-tested against two fake OpenAI-compatible servers: request shape, JSON mode, every fallback path, the cool-down, and the repair round.
+- **Text-to-test is only as good as the translation.** The LLM can misread a sentence. That is why the JSON is shown, and can be edited, before it runs, and why a result only means what its checks say. The provider chain is unit-tested against two fake OpenAI-compatible servers: request shape, JSON mode, every fallback path, the cool-down, and the repair round.
 - **Fresh state.** The sim starts from a fresh `init`, not a copy of the contract's mainnet storage.
 - **First build is heavy** (see above). After that a full assessment takes ~0.2-1 s.

@@ -1,5 +1,5 @@
 /**
- * The LLM behind speech-to-test (a typed plain-English attack description →
+ * The LLM behind text-to-test (a typed plain-English attack description →
  * scenario JSON). Both providers speak the OpenAI chat-completions API and are
  * called in JSON mode. BitLens analyses public on-chain bytecode; the LLM is
  * used only for the translation step and never writes code.
@@ -159,7 +159,7 @@ export async function chatJson(messages: ChatMessage[], opts: { prefer?: string;
   const configured = all.filter((p) => p.key);
   if (!configured.length)
     throw new UpstreamError(
-      "Speech-to-test needs an LLM key: set NEAR_AI_API_KEY (NEAR AI Cloud, https://cloud.near.ai) and/or OPEN_ROUTER_KEY (OpenRouter, used as the fallback). Scans, preset attacks and hand-written scenario JSON work without one.",
+      "Text-to-test needs an LLM key: set NEAR_AI_API_KEY (NEAR AI Cloud, https://cloud.near.ai) and/or OPEN_ROUTER_KEY (OpenRouter, used as the fallback). Scans, preset attacks and hand-written scenario JSON work without one.",
       "LLM_NOT_CONFIGURED",
       503,
     );

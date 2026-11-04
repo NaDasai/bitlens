@@ -340,7 +340,7 @@ function renderResults(body, el) {
 }
 
 // ---------------------------------------------------------------------------
-// Speech-to-test: a typed plain-English sentence → scenario JSON → runner
+// Text-to-test: a typed plain-English sentence → scenario JSON → runner
 // ---------------------------------------------------------------------------
 
 async function llmState() {
@@ -414,12 +414,12 @@ function customBlock(accountId, presets, ai) {
   status(
     ai.configured
       ? `Describe an attack in plain English. ${ai.provider} (${ai.model}) translates it into scenario JSON; the same runner as the presets executes it in the local sim.`
-      : "Speech-to-test is off: the server has no LLM key (NEAR_AI_API_KEY or OPEN_ROUTER_KEY). You can still write or paste scenario JSON (start from a preset), and run it.",
+      : "Text-to-test is off: the server has no LLM key (NEAR_AI_API_KEY or OPEN_ROUTER_KEY). You can still write or paste scenario JSON (start from a preset), and run it.",
   );
   return h(
     "div",
     { class: "block custom" },
-    h("h3", {}, "Your own attack (speech-to-test)"),
+    h("h3", {}, "Your own attack (text-to-test)"),
     note,
     h("div", { class: "say-row" }, say, h("div", { class: "say-btns" }, translate)),
     h("div", { class: "json-head" }, h("span", { class: "meta" }, "Scenario JSON (what the runner executes)"), pick),

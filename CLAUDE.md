@@ -19,7 +19,7 @@
 - Attacks are scenario JSON (runner/src/scenario.rs, core/scenario.ts, scenarios/presets/).
   Keep the Rust and zod schemas in sync. The LLM (NEAR AI Cloud, fallback OpenRouter)
   only translates typed English into scenario JSON; never let it produce code.
-  Validate its output. No voice input: speech-to-test means typed words.
+  Validate its output. No voice input: text-to-test means typed words.
 - No privacy claims about NEAR AI: BitLens analyses public bytecode; NEAR AI is just the
   ecosystem LLM for the translation step.
 - Never report BROKEN or HELD without evidence from the sim; when BitLens could

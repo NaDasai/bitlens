@@ -1,5 +1,5 @@
 /**
- * Speech-to-test against two fake OpenAI-compatible servers standing in for
+ * Text-to-test against two fake OpenAI-compatible servers standing in for
  * NEAR AI Cloud (primary) and OpenRouter (fallback): request shape, JSON mode,
  * fallback rules, validation + one repair round, errors. No network, no real keys.
  */

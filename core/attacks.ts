@@ -3,7 +3,7 @@
  *   risk card → suggested scenarios (canned scenario JSON from
  *   scenarios/presets/, filled with method names from the card) → runner spec
  *   → near-contract-sim → results. Custom scenarios (hand-written, or
- *   translated from English by speech.ts) are the same JSON.
+ *   translated from English by textToTest.ts) are the same JSON.
  */
 import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
