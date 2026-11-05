@@ -1,0 +1,28 @@
+{
+  "about": "Text-to-test eval set: a typed sentence, the demo contract it targets, the result the sim gives for that attack (ground truth: the matching built-in preset, named in 'preset'), and the method the generated scenario must call. Run with `npm run eval:t2t`.",
+  "cases": [
+    { "id": "vv-drain", "contract": "vulnerable-vault.bitlens-demo", "sentence": "the attacker calls admin_drain and keeps the money", "expect": "broken", "method": "admin_drain", "preset": "unauth:admin_drain" },
+    { "id": "vv-drain-indirect", "contract": "vulnerable-vault.bitlens-demo", "sentence": "can a random account empty the vault?", "expect": "broken", "method": "admin_drain", "preset": "unauth:admin_drain" },
+    { "id": "vv-double", "contract": "vulnerable-vault.bitlens-demo", "sentence": "the attacker deposits 5 NEAR and withdraws twice in the same block; it must not get more than it deposited", "expect": "broken", "method": "withdraw", "preset": "double_withdraw" },
+    { "id": "vv-double-short", "contract": "vulnerable-vault.bitlens-demo", "sentence": "two withdrawals of the full balance land in the same block", "expect": "broken", "method": "withdraw", "preset": "double_withdraw" },
+    { "id": "vv-owner", "contract": "vulnerable-vault.bitlens-demo", "sentence": "a stranger tries to make itself the owner", "expect": "held", "method": "set_owner", "preset": "unauth:set_owner" },
+    { "id": "vv-pause", "contract": "vulnerable-vault.bitlens-demo", "sentence": "the attacker pauses the contract", "expect": "held", "method": "set_paused", "preset": "unauth:set_paused" },
+    { "id": "vv-callback", "contract": "vulnerable-vault.bitlens-demo", "sentence": "someone calls the on_withdraw callback directly to get paid", "expect": "held", "method": "on_withdraw", "preset": "unauth:on_withdraw" },
+
+    { "id": "cv-owner", "contract": "clean-vault.bitlens-demo", "sentence": "a random account tries to make itself the owner", "expect": "held", "method": "set_owner", "preset": "unauth:set_owner" },
+    { "id": "cv-double", "contract": "clean-vault.bitlens-demo", "sentence": "the attacker deposits 5 NEAR and fires two withdraws in one block; it must not profit", "expect": "held", "method": "withdraw", "preset": "double_withdraw" },
+    { "id": "cv-freeze", "contract": "clean-vault.bitlens-demo", "sentence": "the attacker tries to freeze the vault for everyone", "expect": "held", "method": "set_paused", "preset": "unauth:set_paused" },
+    { "id": "cv-steal", "contract": "clean-vault.bitlens-demo", "sentence": "the attacker withdraws money it never deposited", "expect": "held", "method": "withdraw", "preset": "unauth:withdraw" },
+
+    { "id": "rv-upgrade", "contract": "risky-vault.bitlens-demo", "sentence": "the attacker tries to upgrade the contract with its own code", "expect": "held", "method": "upgrade", "preset": "unauth:upgrade" },
+    { "id": "rv-addkey", "contract": "risky-vault.bitlens-demo", "sentence": "the attacker adds its own full-access key to the contract", "expect": "held", "method": "add_full_access_key", "preset": "addkey:add_full_access_key" },
+    { "id": "rv-owner", "contract": "risky-vault.bitlens-demo", "sentence": "an outsider takes ownership of the vault", "expect": "held", "method": "set_owner", "preset": "unauth:set_owner" },
+    { "id": "rv-double", "contract": "risky-vault.bitlens-demo", "sentence": "double withdraw in one block must not pay out twice", "expect": "held", "method": "withdraw", "preset": "double_withdraw" },
+
+    { "id": "ye-timeout", "contract": "yield-escrow.bitlens-demo", "sentence": "a user requests a payout of 5 NEAR, nobody approves it, and after the timeout the user must get the 5 NEAR back", "expect": "broken", "method": "request_payout", "preset": "yield:request_payout" },
+    { "id": "ye-stuck", "contract": "yield-escrow.bitlens-demo", "sentence": "if the approver never answers a payout request, the money must not get stuck", "expect": "broken", "method": "request_payout", "preset": "yield:request_payout" },
+    { "id": "ye-approve", "contract": "yield-escrow.bitlens-demo", "sentence": "the attacker approves its own payout", "expect": "held", "method": "approve_payout", "preset": "unauth:approve_payout" },
+    { "id": "ye-approver", "contract": "yield-escrow.bitlens-demo", "sentence": "the attacker makes itself the approver", "expect": "held", "method": "set_approver", "preset": "unauth:set_approver" },
+    { "id": "ye-fake-decision", "contract": "yield-escrow.bitlens-demo", "sentence": "the attacker calls on_payout_decision directly to fake an approval", "expect": "held", "method": "on_payout_decision", "preset": "unauth:on_payout_decision" }
+  ]
+}

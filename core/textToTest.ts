@@ -27,6 +27,8 @@ SCENARIO JSON (one object):
 WORLD (fixed, local simulator, nothing touches a real network):
 - The contract under test is already deployed with 50 NEAR and initialised by "owner" (owner.near).
 - "victim" (victim.near) already deposited 20 NEAR into it when it has a payable deposit method.
+  So never use "victim" for a deposit / request / withdraw flow: its 20 NEAR would hide lost funds.
+  For "a user deposits / requests / gets its money back", use "user" (nothing deposited yet).
 - Signers ("as") can ONLY be: "owner", "victim", "attacker", "user". Each starts with 100 NEAR.
 - Every "call" goes to the contract under test. Args must be a JSON object; account ids in args are
   "owner.near", "victim.near", "attacker.near", "user.near". NEAR amounts inside args are yoctoNEAR
@@ -71,10 +73,22 @@ CHECK POLARITY (most important rule):
 - "explain.held" describes the defence working; "explain.rejected" the attack call being refused.
 
 PATTERNS:
-- Unauthorised call ("a random account / the attacker calls X"): one call as "attacker" with
-  "attack":true; checks: unchanged code, net_at_most attacker 0, unchanged keys, unchanged state.
+- Unauthorised call ("a random account / the attacker calls X", "the attacker approves / sets /
+  pauses / upgrades ..."): ONE call as "attacker" with "attack":true and no setup steps, even when
+  the sentence mentions context ("its own payout"): the world already has a deposit and an owner.
+  Checks: unchanged code, net_at_most attacker 0, unchanged keys, unchanged state.
+- "unchanged" compares with the state before ALL steps, so never combine it with setup steps that
+  change the contract (deposits, requests, other calls): those would count as the attack. With setup,
+  check the attack call itself: {"check":"step_failed","step":"<attack id>"} and/or net_at_most with
+  "steps":["<attack id>"].
+- Never put "expect":"success" on a call the sentence says is not allowed.
+- A call that yields (waits for an approval or answer) stays pending: it is not "succeeded" until it
+  resolves. To check such a request was made, use {"check":"yielded","step":"<id>"}, not step_succeeded.
 - Same-block double withdraw: control, deposit, two "async" withdraw calls, settle;
-  checks: any_succeeded (else inconclusive), net_at_most attacker 0.
+  checks: any_succeeded (else inconclusive), net_at_most attacker 0. EACH withdraw must ask for the
+  whole deposit (args.amount = the deposit in yoctoNEAR), otherwise no double spend can show.
+- Checks on money (net_*) are the property under test: never give them "else":"inconclusive".
+  A "must not profit" check (net_at_most) must include the account's own deposits: leave out "steps".
 - A request that yields / waits for an approval or answer and times out: control, deposit, the
   request as an "async" call, wait_for_yield, advance_past_yield, settle, then a withdraw;
   checks: yielded, completed, net_equals for the requester over ["<request id>","<withdraw id>"].
@@ -163,6 +177,13 @@ function finalise(raw: unknown, sentence: string, card: RiskCard): Scenario {
     throw new ScenarioError(
       `Invalid scenario: ${inverted.join("; ")}. Checks must state what a SECURE contract guarantees (all pass = HELD), not that the attack succeeded; e.g. {"check":"net_at_most","account":"attacker","near":"0"}.`,
     );
+  const victimFlow = (sc.steps as any[]).filter((st) => (st.op === "deposit" || st.op === "control") && st.as === "victim");
+  if (victimFlow.length)
+    throw new ScenarioError(
+      `Invalid scenario: "victim" already has 20 NEAR deposited, so a deposit/withdraw flow signed by it (${victimFlow.map((st) => st.id ?? st.op).join(", ")}) cannot show whether funds were lost. Use "user" (nothing deposited yet) for that flow.`,
+    );
+  const misattributed = [...unchangedWithSetup(sc), ...cannotShowBug(sc)];
+  if (misattributed.length) throw new ScenarioError(`Invalid scenario: ${misattributed.join("; ")}.`);
   return withStandardArgs(sc);
 }
 
@@ -190,6 +211,61 @@ function invertedChecks(sc: Scenario): string[] {
       out.push(`"net_at_least" ${c.near} NEAR for the attacker passes when the attacker profits`);
   }
   return out;
+}
+
+const YOCTO = 10n ** 24n;
+function nearToYocto(v: unknown): bigint {
+  const [w, f = ""] = String(v).split(".");
+  return BigInt(w || "0") * YOCTO + BigInt((f + "0".repeat(24)).slice(0, 24));
+}
+
+/**
+ * Two problems that make a scenario unable to show the bug it is about:
+ * a money check that falls back to INCONCLUSIVE (hides real losses), and a
+ * same-block double withdraw whose calls together ask for no more than was
+ * deposited (a double spend could never show).
+ */
+function cannotShowBug(sc: Scenario): string[] {
+  const out: string[] = [];
+  for (const c of (sc.checks ?? []) as any[])
+    if (c.check.startsWith("net_") && c.else && c.else !== "broken")
+      out.push(`"${c.check}" for ${c.account} has "else":"${c.else}", which would hide a real loss: money checks are the property under test, so drop the "else"`);
+  const steps = sc.steps as any[];
+  for (const c of (sc.checks ?? []) as any[]) {
+    if (c.check !== "net_at_most" || !c.steps) continue;
+    const own = steps.filter((st) => st.op === "deposit" && st.as === c.account && st.id && !c.steps.includes(st.id)).map((st) => st.id);
+    if (own.length)
+      out.push(`"net_at_most" for ${c.account} is limited to steps ${JSON.stringify(c.steps)} and leaves out its own deposit (${own.join(", ")}), so getting its own money back would look like a profit: drop "steps" or include ${own.join(", ")}`);
+  }
+  const deposited = steps.filter((st) => st.op === "deposit").reduce((sum, st) => sum + nearToYocto(st.near), 0n);
+  const asyncBy = new Map<string, any[]>();
+  for (const st of steps) if (st.op === "call" && st.async) asyncBy.set(st.method, [...(asyncBy.get(st.method) ?? []), st]);
+  for (const [method, calls] of asyncBy) {
+    if (calls.length < 2 || deposited === 0n) continue;
+    const amounts = calls.map((st) => (st.args?.amount !== undefined ? BigInt(String(st.args.amount)) : YOCTO)); // standard amount: 1 NEAR
+    if (amounts.every((a) => a < deposited) && amounts.reduce((x, y) => x + y, 0n) <= deposited)
+      out.push(
+        `the ${calls.length} same-block \`${method}\` calls ask for ${amounts.map((a) => `${Number(a / 10n ** 20n) / 10000} NEAR`).join(" + ")}, no more than the deposit, so a double spend could never show: set each call's args.amount to the whole deposit ("${deposited}")`,
+      );
+  }
+  return out;
+}
+
+/**
+ * "unchanged" compares with the state before every step, so with setup steps
+ * that change the contract it would blame them on the attack and report a
+ * false BROKEN.
+ */
+function unchangedWithSetup(sc: Scenario): string[] {
+  const changes = new Set(["call", "deposit", "control", "create_account", "delete_account"]);
+  const setup = (sc.steps as any[]).filter((st) => changes.has(st.op) && !(st.op === "call" && st.attack));
+  if (!setup.length) return [];
+  const bad = (sc.checks ?? []).filter((c: any) => c.check === "unchanged" && (!c.else || c.else === "broken"));
+  if (!bad.length) return [];
+  const ids = setup.map((st) => st.id ?? st.op).join(", ");
+  return [
+    `"unchanged" ${bad.map((c: any) => c.what).join("/")} compares with the state before ALL steps, so your setup steps (${ids}) would be counted as the attack. Either drop the setup and make the attack call directly, or replace "unchanged" with checks on the attack call itself, e.g. {"check":"step_failed","step":"<attack id>"} or net_at_most with "steps":["<attack id>"]`,
+  ];
 }
 
 export interface Translation {
