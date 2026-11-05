@@ -11,10 +11,11 @@
  *
  * A case passes when the scenario calls the expected method AND the sim gives
  * the expected result. Results are also written to evals/results/ (gitignored).
- * Exit code 1 if any case fails.
+ * Exit code 1 if any case fails; 2 if it stopped because no LLM answered
+ * (no credit, bad key, outage), which says nothing about translation quality.
  */
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { runAttacks, scan, scenarioMethods, translateToScenario, type RiskCard } from "../core/index.js";
+import { runAttacks, scan, scenarioMethods, translateToScenario, UpstreamError, type RiskCard } from "../core/index.js";
 
 type Case = { id: string; contract: string; sentence: string; expect: string; method: string; preset: string };
 type Row = {
@@ -66,8 +67,9 @@ if (!cases.length) fail(`no case matches --only ${only?.join(",")}`);
 const cards = new Map<string, RiskCard>();
 const rows: Row[] = [];
 const t0 = Date.now();
+let stopped = "";
 
-for (let run = 1; run <= repeat; run++) {
+outer: for (let run = 1; run <= repeat; run++) {
   for (const c of cases) {
     cards.set(c.contract, cards.get(c.contract) ?? (await scan(c.contract)));
     const row: Row = { id: c.id, run, pass: false, expected: c.expect, got: "-", method_ok: false, attempts: null, translate_ms: 0, provider: null, model: null };
@@ -84,6 +86,12 @@ for (let run = 1; run <= repeat; run++) {
       if (!row.method_ok) row.problem = `scenario never calls ${c.method} (calls: ${scenarioMethods(t.scenario).join(", ") || "nothing"})`;
       else if (!row.pass) row.problem = r?.explanation?.slice(0, 200);
     } catch (e: any) {
+      // No LLM answered at all (no credit, bad key, outage): that says nothing about
+      // translation quality, so stop instead of counting it as a failed case.
+      if (e instanceof UpstreamError && String(e.code).startsWith("LLM_")) {
+        stopped = String(e.message).slice(0, 300);
+        break outer;
+      }
       row.translate_ms ||= Date.now() - start;
       row.got = "error";
       row.problem = String(e?.message ?? e).slice(0, 200);
@@ -96,6 +104,7 @@ for (let run = 1; run <= repeat; run++) {
   }
 }
 
+if (stopped) console.log(`\n⚠ Stopped after ${rows.length} case(s): ${stopped}`);
 const passed = rows.filter((r) => r.pass).length;
 const translated = rows.filter((r) => r.attempts !== null);
 const firstTry = translated.filter((r) => r.attempts === 1).length;
@@ -116,6 +125,7 @@ const summary = {
   translate_median: q(0.5),
   translate_p90: q(0.9),
   wall_s: Math.round((Date.now() - t0) / 1000),
+  ...(stopped ? { stopped } : {}),
 };
 
 console.log(`\n${used}`);
@@ -128,4 +138,4 @@ await mkdir(dir, { recursive: true });
 const out = new URL(`t2t-${summary.when.replace(/[:.]/g, "-")}.json`, dir);
 await writeFile(out, JSON.stringify({ summary, rows }, null, 2));
 console.log(`Saved: evals/results/${out.pathname.split("/").pop()}`);
-process.exit(passed === rows.length ? 0 : 1);
+process.exit(stopped ? 2 : passed === rows.length ? 0 : 1);

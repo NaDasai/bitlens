@@ -46,9 +46,9 @@ account id ─view_code RPC─▶ WASM ─▶ ① risk card ─▶ ② attacks i
 ### Steps (each with expected output)
 
 1. `npm install`
-2. `npm test` → `# pass 27`, `# fail 0` (account-id validation, capability detection, RPC errors and the offline fallback against a fake RPC, attack selection, verdict rules, scenario validation, and text-to-test with its NEAR AI → OpenRouter fallback against two fake LLM servers; no network).
+2. `npm test` → `# pass 31`, `# fail 0` (account-id validation, capability detection, RPC errors and the offline fallback against a fake RPC, attack selection, verdict rules, scenario validation, and text-to-test with its NEAR AI → OpenRouter fallback against two fake LLM servers; no network).
 3. `npm run build:runner` (the first-build warning above applies) → ends with `Finished \`release\` profile [optimized]`; the binary is `runner/target/release/bitlens-runner`. You can skip this: the server and MCP server start the same build in the background if the binary is missing.
-4. `npm run test:sim` → `# pass 8`, ~2 s. Pins the status of **every** scenario on all four demo contracts, plus the risk level and verdict, through the real engine. It also runs custom scenario JSON end to end, and checks that the runner rejects malformed scenarios on its own. If it passes, the demo tells the same story.
+4. `npm run test:sim` → `# pass 9`, ~2 s. Pins the status of **every** scenario on all four demo contracts, plus the risk level and verdict, through the real engine. It also runs custom scenario JSON end to end, checks that the runner rejects malformed scenarios on its own, and checks that the text-to-test eval set's expected results match these pinned statuses. If it passes, the demo tells the same story.
    By hand: `npm run attack -- vulnerable-vault.bitlens-demo` → 8 scenarios, `Summary: 6 held, 2 broken, 0 inconclusive`, `VERDICT: DANGEROUS`, exit code 3; `npm run attack -- clean-vault.bitlens-demo` → `7 held, 0 broken`, `VERDICT: SAFE`, exit code 0.
 5. `npm run server` → `BitLens backend on http://localhost:8787` and, a few seconds later, `[engine] attack engine ready`.
 6. Open **http://localhost:8787** for the landing page (what BitLens does, the MCP server and how to add it), then **Open the app**, or go straight to **http://localhost:8787/app**, and follow the demo path below.
@@ -195,6 +195,39 @@ With neither key set, text-to-test is off. Everything else works, including hand
 
 The web flow (type → **Translate to a test** → **Run this scenario**) gave the same ❌ BROKEN +67.8015 NEAR for the first sentence. A translation sometimes needs the repair round (2 attempts, ~30 s instead of ~10 s). The previous default (`qwen/qwen3.6-35b-a3b`, a reasoning model) took 20-47 s per translation and, before the polarity rule, wrote the first sentence's checks backwards.
 
+### Measuring it: the text-to-test eval
+
+`evals/text-to-test.json` holds 20 typed sentences across the four demo contracts, in plain and indirect wordings (e.g. *"can a random account empty the vault?"*). Each one lists the method the scenario must call and the result the sim must give. The expected results are not hand-picked: each comes from the built-in preset for the same attack, and `npm run test:sim` fails if they ever disagree.
+
+```bash
+npm run eval:t2t                                   # whichever LLM key is set
+npm run eval:t2t -- --provider near                # NEAR AI Cloud only (needs NEAR_AI_API_KEY)
+npm run eval:t2t -- --provider openrouter --model qwen/qwen3.6-35b-a3b
+npm run eval:t2t -- --only vv-drain,ye-timeout --repeat 3
+```
+
+A case passes only when the scenario calls the expected method **and** the sim gives the expected result. The run prints the pass rate, how often the JSON was valid (and valid on the first try), and translation latency (median, p90). It saves every generated scenario to `evals/results/` (gitignored). Exit code: 0 all pass, 1 a case failed, 2 stopped because no LLM answered (no credit, bad key, outage), which says nothing about translation quality. It runs on demand only: it uses the network and LLM credit.
+
+**What it found.** Every case produced valid JSON, but some LLM scenarios could not show the bug they were about and gave a **false BROKEN or false HELD**. Each is now a strict validation rule (the model gets the reason and one repair round) and has a unit test:
+
+| Mistake in the generated scenario | Wrong result it caused |
+|---|---|
+| "contract state unchanged" combined with setup steps (deposits, requests): the setup's own change counted as the attack | false BROKEN |
+| a deposit/withdraw flow signed by `victim`, whose existing 20 NEAR hid the lost funds | false HELD |
+| two same-block withdrawals that together asked for no more than the deposit, so a double spend could never show | false HELD |
+| a "must not profit" check that left out the account's own deposit, so getting its money back looked like profit | false BROKEN |
+| a money check with `"else": "inconclusive"`, which hid a real loss | INCONCLUSIVE instead of BROKEN |
+
+**Results** (OpenRouter, `deepseek/deepseek-v3.2`):
+
+| Rules in place | Pass | Valid JSON | Valid first try | Translation median / p90 |
+|---|---|---|---|---|
+| before this work (1 run) | 19/20 | 100% | 90% | 8.8 s / 18.3 s |
+| first four rules (2 runs) | 39/40 | 100% | 98% | 8.6 s / 12.5 s |
+| all rules (3 runs requested) | 9/9 completed | 100% | 100% | 8.7 s / 10.7 s |
+
+The last run stopped after 9 cases because the OpenRouter account ran out of credit, so a full run with all rules is still to do. The NEAR AI path is not measured yet either: it needs `NEAR_AI_API_KEY`. Without a key, its endpoint answers with HTTP 401, which the fallback handles, and the default model (`deepseek/deepseek-v3.2`) is in its catalogue.
+
 Try it:
 - **Web:** `OPEN_ROUTER_KEY=… npm run server` (and/or `NEAR_AI_API_KEY=…`) → scan `vulnerable-vault` → *Your own attack* → type the attack → **Translate to a test** (or Ctrl/⌘+Enter) → review the JSON → **Run this scenario** → ❌ BROKEN, with the drain's receipt trail.
 - **CLI:**
@@ -335,7 +368,8 @@ web/        static HTML/CSS/JS: index.html (landing page), app.html + app.js (th
 runner/     Rust scenario interpreter over near-contract-sim (scenario.rs: format + validation, interp.rs: execution)
 scenarios/  presets/*.json (the six attack templates as canned scenario JSON), examples/*.json
 contracts/  clean / risky / vulnerable / yield-escrow demo contracts (near-sdk 5.29) + res/*.wasm
-scripts/    preflight.ts (pre-demo checklist), mcp-smoke.ts, fetch-reference-wasm.sh
+scripts/    preflight.ts (pre-demo checklist), mcp-smoke.ts, eval-text-to-test.ts (npm run eval:t2t), fetch-reference-wasm.sh
+evals/      text-to-test.json: the eval set (sentences + expected sim results)
 .cache/     last fetched code per account, for the offline fallback (gitignored)
 ```
 
