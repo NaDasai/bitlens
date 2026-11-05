@@ -7,6 +7,7 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { test } from "node:test";
+import { readFileSync } from "node:fs";
 import { RUNNER_BIN, runAttacks, scan, verdictOf } from "./index.js";
 
 const built = existsSync(RUNNER_BIN);
@@ -112,4 +113,19 @@ test("runner re-validates: a malformed scenario becomes an error result, the oth
   assert.deepEqual(out.scenarios.map((s: any) => s.status), ["broken", "error", "error"]);
   assert.match(out.scenarios[1].explanation, /unknown variant `mallory.near`/);
   assert.match(out.scenarios[2].explanation, /advance_blocks must be 1-5000/);
+});
+
+// The text-to-test eval set (evals/text-to-test.json) takes its expected results
+// from the presets above, so it can never disagree with what the sim really says.
+test("text-to-test eval set: every expected result matches its preset's pinned status", () => {
+  const { cases } = JSON.parse(readFileSync(new URL("../evals/text-to-test.json", import.meta.url), "utf8")) as {
+    cases: { id: string; contract: string; expect: string; preset: string }[];
+  };
+  assert.ok(cases.length >= 20, "about 20 cases");
+  assert.equal(new Set(cases.map((c) => c.id)).size, cases.length, "unique ids");
+  for (const c of cases) {
+    const pinned = EXPECTED[c.contract]?.results[c.preset];
+    assert.ok(pinned, `${c.id}: ${c.preset} is not a pinned preset of ${c.contract}`);
+    assert.equal(c.expect, pinned, `${c.id}: expects ${c.expect} but the sim gives ${pinned} for ${c.preset}`);
+  }
 });

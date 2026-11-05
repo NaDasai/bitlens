@@ -18,7 +18,8 @@
     "build:runner": "cd runner && cargo build --release --locked",
     "mcp": "tsx mcp/server.ts",
     "test:sim": "tsx --test core/sim.test.ts",
-    "preflight": "tsx scripts/preflight.ts"
+    "preflight": "tsx scripts/preflight.ts",
+    "eval:t2t": "tsx scripts/eval-text-to-test.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",

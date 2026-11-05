@@ -206,3 +206,74 @@ test("calls get the standard argument set; the model's own args win", async () =
   assert.match(args.public_key, /^ed25519:/);
   assert.match(near.seen[0].body.messages[0].content, /standard argument set/);
 });
+
+test('"unchanged" checks with setup steps → repair round (they would blame the setup on the attack)', async () => {
+  const card = await scan("vulnerable-vault.bitlens-demo");
+  const withSetup = {
+    ...DRAIN,
+    steps: [{ op: "deposit", id: "dep", as: "attacker", method: "deposit", near: "5" }, ...DRAIN.steps],
+    checks: [{ check: "unchanged", what: "state" }],
+  };
+  near.replies.push({ body: chat(JSON.stringify(withSetup)) }, GOOD);
+  const t = await translateToScenario("the attacker deposits and then drains it", card);
+  assert.equal(t.attempts, 2);
+  assert.match(near.seen[1].body.messages.at(-1).content, /setup steps \(dep\) would be counted as the attack/);
+
+  // Without setup steps, "unchanged state" is fine.
+  const direct = { ...DRAIN, checks: [{ check: "unchanged", what: "state" }] };
+  near.replies.push({ body: chat(JSON.stringify(direct)) });
+  assert.equal((await translateToScenario("drain it", card)).attempts, 1);
+});
+
+test('a deposit flow signed by "victim" (already has 20 NEAR in) → repair round', async () => {
+  const card = await scan("vulnerable-vault.bitlens-demo");
+  const victimFlow = {
+    ...DRAIN,
+    steps: [{ op: "deposit", id: "dep", as: "victim", method: "deposit", near: "5" }, ...DRAIN.steps],
+  };
+  near.replies.push({ body: chat(JSON.stringify(victimFlow)) }, GOOD);
+  const t = await translateToScenario("a user deposits 5 NEAR and must get it back", card);
+  assert.equal(t.attempts, 2);
+  assert.match(near.seen[1].body.messages.at(-1).content, /"victim" already has 20 NEAR deposited.*Use "user"/);
+});
+
+test("scenarios that cannot show the bug → repair round (hidden money check, too-small double withdraw)", async () => {
+  const card = await scan("vulnerable-vault.bitlens-demo");
+  const W = (id: string, amount?: string) => ({ op: "call", id, as: "attacker", method: "withdraw", async: true, ...(amount ? { args: { amount } } : {}) });
+  const weak = {
+    ...DRAIN,
+    steps: [{ op: "deposit", id: "dep", as: "attacker", method: "deposit", near: "10" }, W("w1"), W("w2"), { op: "settle" }],
+    checks: [{ check: "net_at_most", account: "attacker", near: "0", else: "inconclusive" }],
+  };
+  near.replies.push({ body: chat(JSON.stringify(weak)) }, GOOD);
+  const t = await translateToScenario("two withdrawals of the full balance land in the same block", card);
+  assert.equal(t.attempts, 2);
+  const repair = near.seen[1].body.messages.at(-1).content;
+  assert.match(repair, /"net_at_most" for attacker has "else":"inconclusive"/);
+  assert.match(repair, /ask for 1 NEAR \+ 1 NEAR, no more than the deposit/);
+
+  // Each call asking for the whole deposit is a real double-spend test.
+  const full = "10000000000000000000000000";
+  const strong = { ...weak, steps: [weak.steps[0], W("w1", full), W("w2", full), { op: "settle" }], checks: [{ check: "net_at_most", account: "attacker", near: "0" }] };
+  near.replies.push({ body: chat(JSON.stringify(strong)) });
+  assert.equal((await translateToScenario("double withdraw", card)).attempts, 1);
+});
+
+test('"must not profit" scoped to leave out the account\'s own deposit → repair round', async () => {
+  const card = await scan("vulnerable-vault.bitlens-demo");
+  const five = "5000000000000000000000000";
+  const scoped = {
+    ...DRAIN,
+    steps: [
+      { op: "deposit", id: "dep", as: "attacker", method: "deposit", near: "5" },
+      { op: "call", id: "w1", as: "attacker", method: "withdraw", async: true, args: { amount: five } },
+      { op: "call", id: "w2", as: "attacker", method: "withdraw", async: true, args: { amount: five } },
+      { op: "settle" },
+    ],
+    checks: [{ check: "net_at_most", account: "attacker", near: "0", steps: ["w1", "w2"] }],
+  };
+  near.replies.push({ body: chat(JSON.stringify(scoped)) }, GOOD);
+  const t = await translateToScenario("double withdraw must not pay out twice", card);
+  assert.equal(t.attempts, 2);
+  assert.match(near.seen[1].body.messages.at(-1).content, /leaves out its own deposit \(dep\)/);
+});
