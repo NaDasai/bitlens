@@ -18,6 +18,7 @@
     "build:runner": "cd runner && cargo build --release --locked",
     "mcp": "tsx mcp/server.ts",
     "test:sim": "tsx --test core/sim.test.ts",
+    "test:runner": "cd runner && cargo test --release --locked",
     "preflight": "tsx scripts/preflight.ts",
     "eval:t2t": "tsx scripts/eval-text-to-test.ts"
   },

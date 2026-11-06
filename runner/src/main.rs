@@ -12,6 +12,7 @@
 //! result comes from the sim's receipts and effects. Nothing here talks to any
 //! network.
 
+mod argfix;
 mod interp;
 mod scenario;
 
