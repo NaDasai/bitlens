@@ -12,6 +12,7 @@ import { InputError } from "./errors.js";
 import { chatJson, type ChatMessage } from "./llm.js";
 import type { RiskCard } from "./scan.js";
 import { kitchenSinkArgs, SIM_ACCOUNTS, suggestAttacks } from "./attacks.js";
+import { argTypeProblems, formatSignature, standardArgs, standardSignatures } from "./standards.js";
 import { ScenarioError, scenarioMethods, validateScenario, type Scenario } from "./scenario.js";
 
 const MAX_ATTEMPTS = 2;
@@ -94,7 +95,10 @@ PATTERNS:
   checks: yielded, completed, net_equals for the requester over ["<request id>","<withdraw id>"].
 
 ARGUMENTS:
-- Argument names cannot be read from bytecode. BitLens fills every call with its standard argument set:
+- Methods listed under STANDARD METHODS below have exact, known signatures: BitLens fills their
+  arguments from the signature (accounts = the signer) and attaches the 1 yoctoNEAR they require.
+- For every other method, argument names cannot be read from bytecode. BitLens fills every call with
+  its standard argument set:
   ${STANDARD_ARG_KEYS}
   (account fields = the signer's account, amount = 1 NEAR, a valid tiny WASM in "code", the attacker's
   key in "public_key"). Only put the args you need to change in "args", usually just "amount"
@@ -114,12 +118,19 @@ RULES:
  * model cannot know argument names from bytecode); the model's own args win,
  * except the byte payloads "code" and "public_key", which are always BitLens's.
  */
-function withStandardArgs(sc: Scenario): Scenario {
+function withStandardArgs(sc: Scenario, card: RiskCard): Scenario {
+  const sigs = new Map(standardSignatures(card).map((s) => [s.method, s]));
   const fill = (steps: any[]): any[] =>
     steps.map((st) => {
       if (st.op === "sweep") return { ...st, steps: fill(st.steps) };
       if (st.op !== "call") return st;
       const who = SIM_ACCOUNTS[st.as as keyof typeof SIM_ACCOUNTS];
+      const sig = sigs.get(st.method);
+      if (sig) {
+        // A NEP standard method: its exact signature, not the generic argument set.
+        const noDeposit = st.deposit_near === undefined && st.deposit_yocto === undefined && !st.guard_deposit;
+        return { ...st, args: { ...standardArgs(sig, who), ...(st.args ?? {}) }, ...(sig.deposit === "1 yocto" && noDeposit ? { deposit_yocto: "1" } : {}) };
+      }
       const std = kitchenSinkArgs(who);
       // Byte payloads always come from BitLens (a valid tiny WASM, the attacker's key): a model can't produce valid ones.
       return { ...st, args: { ...std, ...(st.args ?? {}), code: std.code, public_key: std.public_key } };
@@ -135,6 +146,9 @@ function contractFacts(card: RiskCard): string {
     `Exported methods: ${card.methods.join(", ")}`,
     privileged.length ? `Admin/privileged-looking methods: ${privileged.join(", ")}` : "",
     card.standards.length ? `Standards: ${card.standards.map((s) => s.id).join(", ")}` : "",
+    standardSignatures(card).length
+      ? `STANDARD METHODS (exact signatures from the NEP specs; use these argument names and JSON types; FT amounts are token units as strings, not NEAR):\n${standardSignatures(card).map((s) => "  " + formatSignature(s)).join("\n")}`
+      : "",
     caps.length ? `Capabilities from bytecode: ${caps.join(", ")}` : "",
   ]
     .filter(Boolean)
@@ -184,7 +198,10 @@ function finalise(raw: unknown, sentence: string, card: RiskCard): Scenario {
     );
   const misattributed = [...unchangedWithSetup(sc), ...cannotShowBug(sc)];
   if (misattributed.length) throw new ScenarioError(`Invalid scenario: ${misattributed.join("; ")}.`);
-  return withStandardArgs(sc);
+  const sigs = new Map(standardSignatures(card).map((s) => [s.method, s]));
+  const typeProblems = (sc.steps as any[]).flatMap((st) => (st.op === "call" && sigs.has(st.method) ? argTypeProblems(sigs.get(st.method)!, st.args) : []));
+  if (typeProblems.length) throw new ScenarioError(`Invalid scenario: ${typeProblems.join("; ")}`);
+  return withStandardArgs(sc, card);
 }
 
 /**
