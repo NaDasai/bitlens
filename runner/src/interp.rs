@@ -12,7 +12,7 @@ use std::time::Instant;
 use near_contract_sim::nearcore::near_primitives::action::DeleteAccountAction;
 use near_contract_sim::{Action, Balance, CryptoHash, Fault, Gas, Receipts, Sim, Tx, TxOutcome};
 use serde::Serialize;
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 
 use crate::scenario::{Acct, Check, Expect, Outcome, Role, Scenario, Step, What, parse_near, parse_signed_near, parse_yocto};
 
@@ -130,6 +130,18 @@ fn paid_to(out: &TxOutcome, who: &str) -> u128 {
     net_of(out, who).max(0) as u128
 }
 
+/// The contract's rejection names the caller's lack of rights (not a bad value).
+fn is_access_control(msg: &str) -> bool {
+    let m = msg.to_lowercase();
+    [
+        "permission", "is private", "only the owner", "only owner", "not the owner", "not owner", "owner only", "only the approver",
+        "unauthori", "not authori", "not allowed", "access denied", "requires one of these roles", "predecessor", "must be called by",
+        "can only be called", "only admin", "not an admin", "only the admin", "forbidden",
+    ]
+    .iter()
+    .any(|p| m.contains(p))
+}
+
 /// The call failed because we could not build valid input from bytecode alone,
 /// not because of access control.
 fn is_input_problem(msg: &str) -> bool {
@@ -172,6 +184,8 @@ struct StepRecord {
     transfer_failed: bool,
     has_callback: bool,
     complete: bool,
+    /// How many times the call's arguments were fixed from the contract's own errors (argfix).
+    arg_repairs: usize,
 }
 
 #[derive(Clone)]
@@ -233,6 +247,7 @@ impl Recorder {
             transfer_failed: transfer_failed(out),
             has_callback: callback_after_transfer(out, &self.contract),
             complete: out.is_complete(),
+            arg_repairs: 0,
         });
         self.traces.push(format!("── {label} ──\n{out}"));
     }
@@ -345,6 +360,9 @@ pub struct InitCandidate {
     pub args: Value,
 }
 
+/// How many times init may fix its arguments from the contract's JSON errors.
+const MAX_ARG_REPAIRS: usize = 30;
+
 pub fn build_world(wasm: Vec<u8>, contract: &str, init_candidates: &[InitCandidate], deposit_method: Option<&str>) -> Result<World, String> {
     let mut sim = Sim::new();
     for a in [OWNER, VICTIM, ATTACKER, USER] {
@@ -356,12 +374,35 @@ pub fn build_world(wasm: Vec<u8>, contract: &str, init_candidates: &[InitCandida
     let mut init = json!({ "ok": false, "tried": [] });
     'outer: for cand in init_candidates {
         for signer in [OWNER, contract] {
-            let out = sim.call(signer, contract, &cand.method).args_json(&cand.args).transact();
-            init["tried"].as_array_mut().unwrap().push(json!({ "method": cand.method, "signer": signer, "ok": out.is_success(), "error": panic_text(&out) }));
+            // Call, and while the contract says which JSON field is missing or mistyped, fix it and call
+            // again (argfix): bytecode has no argument names, but the contract's own errors do.
+            let mut args = cand.args.clone();
+            let mut repairs = 0;
+            let out = loop {
+                let out = sim.call(signer, contract, &cand.method).args_json(&args).transact();
+                if out.is_success() || repairs >= MAX_ARG_REPAIRS {
+                    break out;
+                }
+                let raw = out.failure().map(|f| f.to_string()).unwrap_or_default();
+                match crate::argfix::repair(&raw, &args, OWNER) {
+                    Some(next) => {
+                        args = next;
+                        repairs += 1;
+                    }
+                    None => break out,
+                }
+            };
+            init["tried"].as_array_mut().unwrap().push(json!({ "method": cand.method, "signer": signer, "ok": out.is_success(), "error": panic_text(&out), "arg_repairs": repairs }));
             if out.is_success() {
                 init["ok"] = json!(true);
                 init["method"] = json!(cand.method);
                 init["signer"] = json!(signer);
+                if repairs > 0 {
+                    // Only the fields the contract asked for, not the whole generic set.
+                    let asked: Map<String, Value> = args.as_object().map(|m| m.iter().filter(|(k, _)| cand.args.get(k.as_str()).is_none()).map(|(k, v)| (k.clone(), v.clone())).collect()).unwrap_or_default();
+                    init["discovered_args"] = Value::Object(asked);
+                    init["arg_repairs"] = json!(repairs);
+                }
                 break 'outer;
             }
         }
@@ -453,7 +494,7 @@ fn exec(sim: &mut Sim, rec: &mut Recorder, steps: &[Step], env: &mut Env) -> Res
                     Some(v) => v.as_u64(),
                     None => None,
                 };
-                let args = if args.is_null() { json!({}) } else { args.clone() };
+                let mut args = if args.is_null() { json!({}) } else { args.clone() };
                 let mut label = format!("{who} calls {method}");
                 if dep > 0 {
                     label += &format!(" ({} NEAR attached)", if dep <= TOL { format!("{dep} yocto") } else { fmt_near(dep) });
@@ -478,7 +519,23 @@ fn exec(sim: &mut Sim, rec: &mut Recorder, steps: &[Step], env: &mut Env) -> Res
                     label += " (1 yocto)";
                     out = build_call(sim, who, env.c, method, &args, 1, gas, hold).transact();
                 }
+                // The contract said which JSON field is missing or mistyped: fix it and call again
+                // (argfix). Failed attempts change no state, so only the final call is recorded.
+                let mut repairs = 0;
+                while out.is_failure() && repairs < MAX_ARG_REPAIRS {
+                    let raw = out.failure().map(|f| f.to_string()).unwrap_or_default();
+                    let Some(next) = crate::argfix::repair(&raw, &args, who) else { break };
+                    args = next;
+                    repairs += 1;
+                    out = build_call(sim, who, env.c, method, &args, dep, gas, hold).transact();
+                }
+                if repairs > 0 {
+                    label += &format!(" (arguments fixed from {repairs} contract error(s))");
+                }
                 rec.record(&label, &out, RecordOpts { id: &id, signer: Some(who), deposit: dep, harness: *harness, attack: *attack });
+                if let Some(last) = rec.steps.last_mut() {
+                    last.arg_repairs = repairs;
+                }
                 match expect {
                     Some(Expect::Success) if out.is_failure() => {
                         return Err((Status::Inconclusive, format!("Setup call `{method}` by {who} was expected to succeed but failed: {}", panic_text(&out))));
@@ -781,6 +838,15 @@ pub fn run_scenario(world: &World, sc: &Scenario) -> ScenarioResult {
                     Some(r) if is_input_problem(&r.error) => (
                         Status::Inconclusive,
                         format!("Could not build valid arguments for this call from bytecode alone, so access control was not exercised. Contract said: {}", r.error),
+                    ),
+                    // Discovered arguments contain guessed values: a rejection only proves access
+                    // control when the contract says so, not when it rejects one of our values.
+                    Some(r) if r.arg_repairs > 0 && !is_access_control(&r.error) => (
+                        Status::Inconclusive,
+                        format!(
+                            "BitLens found this call's arguments from the contract's own errors ({} fix(es)), but the contract then rejected one of the guessed values, not the caller, so access control was not exercised. Contract said: {}",
+                            r.arg_repairs, r.error
+                        ),
                     ),
                     Some(_) if sc.explain.rejected.is_some() => (Status::Held, render(sc.explain.rejected.as_deref().unwrap(), &rec, &env)),
                     Some(r) if sc.explain.held.is_none() => (Status::Held, format!("The attack was rejected ({}): {}. Checks held: {}.", r.label, r.error, check_names(&sc.checks))),
