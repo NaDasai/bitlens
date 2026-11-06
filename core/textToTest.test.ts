@@ -277,3 +277,20 @@ test('"must not profit" scoped to leave out the account\'s own deposit → repai
   assert.equal(t.attempts, 2);
   assert.match(near.seen[1].body.messages.at(-1).content, /leaves out its own deposit \(dep\)/);
 });
+
+test("NEP standard methods: exact signature in the prompt, args from the signature, 1 yocto attached, wrong types repaired", async () => {
+  const base = await scan("vulnerable-vault.bitlens-demo");
+  const card = { ...base, standards: [{ id: "nep141", name: "FT Core (NEP-141)" }], methods: [...base.methods, "ft_transfer", "ft_transfer_call", "ft_total_supply", "ft_balance_of"] };
+  const call = (args: Record<string, unknown>) => ({
+    ...DRAIN,
+    steps: [{ op: "call", id: "hit", as: "attacker", method: "ft_transfer", args, attack: true }],
+  });
+  near.replies.push({ body: chat(JSON.stringify(call({ amount: 5 }))) }, { body: chat(JSON.stringify(call({ amount: "5" }))) });
+  const t = await translateToScenario("the attacker transfers tokens it does not own", card);
+  assert.match(near.seen[0].body.messages[0].content, /ft_transfer\(receiver_id: string, amount: string, memo: string\|null\) \[NEP141\] · attach exactly 1 yoctoNEAR/);
+  assert.equal(t.attempts, 2);
+  assert.match(near.seen[1].body.messages.at(-1).content, /ft_transfer\.amount must be string \(NEP141\), not number/);
+  const step = t.scenario.steps[0] as any;
+  assert.deepEqual(step.args, { receiver_id: "attacker.near", amount: "5", memo: null }, "signature args, not the generic set");
+  assert.equal(step.deposit_yocto, "1");
+});

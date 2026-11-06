@@ -46,7 +46,7 @@ account id ─view_code RPC─▶ WASM ─▶ ① risk card ─▶ ② attacks i
 ### Steps (each with expected output)
 
 1. `npm install`
-2. `npm test` → `# pass 31`, `# fail 0` (account-id validation, capability detection, RPC errors and the offline fallback against a fake RPC, attack selection, verdict rules, scenario validation, and text-to-test with its NEAR AI → OpenRouter fallback against two fake LLM servers; no network).
+2. `npm test` → `# pass 36`, `# fail 0` (account-id validation, capability detection, RPC errors and the offline fallback against a fake RPC, attack selection, verdict rules, scenario validation, and text-to-test with its NEAR AI → OpenRouter fallback against two fake LLM servers; no network).
 3. `npm run build:runner` (the first-build warning above applies) → ends with `Finished \`release\` profile [optimized]`; the binary is `runner/target/release/bitlens-runner`. You can skip this: the server and MCP server start the same build in the background if the binary is missing.
 4. `npm run test:sim` → `# pass 9`, ~2 s. Pins the status of **every** scenario on all four demo contracts, plus the risk level and verdict, through the real engine. It also runs custom scenario JSON end to end, checks that the runner rejects malformed scenarios on its own, and checks that the text-to-test eval set's expected results match these pinned statuses. If it passes, the demo tells the same story.
    By hand: `npm run attack -- vulnerable-vault.bitlens-demo` → 8 scenarios, `Summary: 6 held, 2 broken, 0 inconclusive`, `VERDICT: DANGEROUS`, exit code 3; `npm run attack -- clean-vault.bitlens-demo` → `7 held, 0 broken`, `VERDICT: SAFE`, exit code 0.
@@ -165,7 +165,9 @@ The LLM has one job: translate the sentence into a **scenario JSON object** in t
   4. sent back once with the error if it fails, so the model can fix it (on the provider that answered);
   5. validated and bounded again by the Rust runner.
 
-  Argument names can't be read from bytecode, so every translated call gets the same standard argument set as the presets (account fields, `amount`, a tiny valid WASM, the attacker's key); only the args the model sets explicitly (usually `amount`) override it.
+  **NEP standard methods** (NEP-141, 145, 148, 171, 177, 178, 199, 330) have public, fixed signatures. When the scan detects a standard, the model sees the exact signature of each of its methods the contract exports, e.g. `ft_transfer(receiver_id: string, amount: string, memo: string|null) [NEP141] · attach exactly 1 yoctoNEAR`. Calls to them get their arguments from the signature (accounts are the signer, optional ones `null`) and the 1 yoctoNEAR the NEP requires. An argument of the wrong JSON type (e.g. `amount` as a number) is rejected with the reason, for the repair round. Argument names and types come from near-contract-parser's interface table; required deposits from the NEP specs (`core/standards.ts`).
+
+  For every other method, argument names can't be read from bytecode, so every translated call gets the same generic argument set as the presets (account fields, `amount`, a tiny valid WASM, the attacker's key); only the args the model sets explicitly (usually `amount`) override it.
 
   A scenario can only sign as the four sim accounts, only call the contract under test, and is size-limited.
 - **Results:** you see the JSON before it runs and can edit it. A run made only of custom scenarios never reports SAFE: one idea tested is not an assessment.
@@ -377,7 +379,7 @@ evals/      text-to-test.json: the eval set (sentences + expected sim results)
 
 - **Never touches mainnet state.** BitLens only makes RPC *view* calls. Attacks run in a local, in-process runtime, never against a live contract, and nothing is ever signed or sent.
 - **Bytecode only, no source.** A present import means the code *can* reach an action, not that anyone can trigger it. Method-name heuristics are hints. An absent import is a proof.
-- **Arguments are guessed.** BitLens cannot always build valid arguments or initialise complex contracts (aurora, token.sweat). It reports INCONCLUSIVE in those cases and never claims HELD from a rejection it cannot explain. A SAFE verdict means "the six templates found nothing", not "audited".
+- **Arguments are guessed, except for NEP standard methods.** Standard methods get their exact signatures, but custom methods (including the init method) still get guessed arguments, so BitLens cannot always build valid arguments or initialise complex contracts (aurora, token.sweat). It reports INCONCLUSIVE in those cases and never claims HELD from a rejection it cannot explain. A SAFE verdict means "the six templates found nothing", not "audited".
 - **Templates, not fuzzing.** Six scenario templates aimed at common NEAR bug classes, driven by the risk card. Logic bugs outside them (pricing, oracle, cross-contract token flows with real counterparties) are not tested. Other contracts the target calls are not deployed, so those calls fail in the sim.
 - **Yield detection needs a hint in the method name.** Template 6 picks methods named like `request`/`sign`/`wait`/`ask`. A yield started from a differently named method is not attacked. It is verified on yield-escrow, both the buggy and the fixed build.
 - **Offline cache is a last-known copy.** If the contract was redeployed since the cached fetch, a cached card describes the old code. The card shows the fetch time and block height.
