@@ -7,6 +7,7 @@
 <meta name="description" content="BitLens attacks a NEAR smart contract's real bytecode in a local simulator before you trust it. Web app for people, MCP server for AI agents." />
 <link rel="icon" href="/logo.svg" type="image/svg+xml" />
 <link rel="stylesheet" href="/landing.css" />
+<link rel="stylesheet" href="/replay.css" />
 <script>
   // Old links (/?account=…) now belong to the app.
   if (new URLSearchParams(location.search).has("account")) location.replace("/app" + location.search);
@@ -37,25 +38,23 @@
     <p class="note">Read-only: BitLens only makes RPC <code>view_code</code> / <code>view_access_key_list</code> queries and never sends a transaction. Attacks run in a local simulator.</p>
   </div>
 
-  <figure class="result" aria-label="Example result">
+  <figure class="result" aria-label="Replay of a real attack run">
     <div class="result-head">
       <div>
         <div class="mono acct">vulnerable-vault.bitlens-demo</div>
-        <div class="muted small">built-in demo contract · 8 attacks</div>
+        <div class="muted small">built-in demo contract · 2 broken · 6 held</div>
       </div>
       <span class="verdict bad">DANGEROUS</span>
     </div>
-    <ul class="checks">
-      <li><span class="st broken">BROKEN</span> <span>Anyone can call <code>admin_drain</code>: the attacker walked away with <b class="plus">+67.8015 NEAR</b>.</span></li>
-      <li><span class="st broken">BROKEN</span> <span>Two same-block <code>withdraw</code> calls both paid out: <b class="plus">+5.0000 NEAR</b> of other depositors' money.</span></li>
-      <li><span class="st held">HELD</span> <span>Non-owner <code>set_owner</code> was rejected: <i>only the owner can call this</i>.</span></li>
-      <li class="more muted">+ 5 more defences held</li>
-    </ul>
-    <div class="trail mono">
-      <div>#10 attacker.near → vault: call admin_drain ✓</div>
-      <div>#11 vault → attacker.near: Transfer 67.8015 NEAR ✓</div>
+    <div class="hero-attack"><span class="live-dot" aria-hidden="true"></span><span id="hero-attack-name">Unauthorised call to admin_drain</span></div>
+    <div id="hero-replay" class="hero-replay">
+      <!-- Without JavaScript: the same result, static. -->
+      <ul class="checks">
+        <li><span class="st broken">BROKEN</span> <span>Anyone can call <code>admin_drain</code>: the attacker walked away with <b class="plus">+67.8015 NEAR</b>.</span></li>
+        <li><span class="st held">HELD</span> <span>Non-owner <code>set_owner</code> was rejected: <i>only the owner can call this</i>.</span></li>
+      </ul>
     </div>
-    <figcaption class="muted small">A real run on one of the four built-in demo contracts.</figcaption>
+    <figcaption class="muted small">Replay of a real run on one of the four built-in demo contracts. <a href="/app?account=vulnerable-vault.bitlens-demo">Run it yourself →</a></figcaption>
   </figure>
 </header>
 
@@ -174,5 +173,6 @@
     });
   }
 </script>
+<script type="module" src="/hero.js"></script>
 </body>
 </html>

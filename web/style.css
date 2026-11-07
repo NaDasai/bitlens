@@ -114,45 +114,6 @@ h2.plain { font-family: system-ui, sans-serif; }
 .delta { font-family: var(--mono); font-size: 12px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
 @media (max-width: 480px) { .delta { font-size: 10.5px; padding: 1px 6px; white-space: normal; overflow-wrap: anywhere; border-radius: 8px; } }
 .delta.pos { color: var(--green); } .delta.neg { color: var(--red); }
-/* attack replay (web/replay.js) */
-.replay-wrap { margin-top: 8px; }
-.replay-open { padding: 6px 14px; font-size: 13px; font-weight: 600; }
-.replay-open.broken { background: var(--red); border-color: var(--red); color: #fff; }
-.replay-open:hover { border-color: var(--accent); }
-.replay-box { margin-top: 10px; }
-.replay { background: #0d1117; border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
-.replay-controls { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 10px; }
-.replay-controls button { padding: 4px 12px; font-size: 13px; }
-.rp-progress { margin-left: auto; color: var(--muted); font: 12px var(--mono); }
-.replay-stage { position: relative; padding: 26px 0 18px; }
-.replay-lanes { display: flex; justify-content: space-around; gap: 12px; flex-wrap: wrap; }
-.replay-node { min-width: 0; flex: 0 1 200px; text-align: center; padding: 12px 10px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel); transition: border-color .3s, box-shadow .3s; }
-.replay-node.contract { border-style: dashed; }
-.replay-node.up { border-color: var(--green); box-shadow: 0 0 0 1px var(--green), 0 0 18px rgba(63, 185, 80, .25); }
-.replay-node.down { border-color: var(--red); box-shadow: 0 0 0 1px var(--red), 0 0 18px rgba(248, 81, 73, .25); }
-.rn-role { font: 700 11px var(--mono); letter-spacing: .8px; text-transform: uppercase; color: var(--muted); }
-.replay-node.attacker .rn-role { color: var(--red); }
-.replay-node.contract .rn-role { color: var(--accent); }
-.rn-id { font: 12px var(--mono); overflow-wrap: anywhere; margin: 2px 0 6px; }
-.rn-bal { font: 700 15px var(--mono); }
-.replay-node.up .rn-bal { color: var(--green); } .replay-node.down .rn-bal { color: var(--red); }
-.replay-fly { position: absolute; inset: 0; pointer-events: none; }
-.replay-token { position: absolute; left: 0; top: 0; padding: 3px 10px; border-radius: 999px; font: 700 12px var(--mono); white-space: nowrap; will-change: transform; z-index: 2; }
-.replay-token.near { background: #e3b341; color: #1b1405; box-shadow: 0 0 16px rgba(227, 179, 65, .55); }
-.replay-token.call { background: #1f2a37; color: var(--text); border: 1px solid var(--blue, #58a6ff); }
-.replay-token.bad { background: #3d1418; color: #ffa198; border: 1px solid var(--red); }
-.replay-log { margin: 8px 0 0; padding-left: 22px; font-size: 12.5px; color: var(--muted); }
-.replay-log li { margin: 2px 0; word-break: break-word; animation: rp-in .35s ease-out; }
-.replay-log li.now { color: var(--text); }
-.replay-log li.bad { color: #ffa198; }
-.replay-log code { color: var(--text); font-size: 12px; }
-.replay-log .blk { margin-right: 6px; font-family: var(--mono); color: var(--muted); }
-.replay-log .amt { color: var(--yellow); font-weight: 600; }
-.replay-end { margin-top: 10px; font-size: 13.5px; opacity: 0; transition: opacity .4s; }
-.replay-end.shown { opacity: 1; }
-@keyframes rp-in { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: none; } }
-@media (prefers-reduced-motion: reduce) { .replay-log li { animation: none; } .replay-node, .replay-end { transition: none; } }
-@media (max-width: 480px) { .replay-node { flex-basis: 40%; padding: 8px 6px; } .rn-bal { font-size: 13px; } }
 pre.trace { font: 11.5px/1.45 var(--mono); background: #0d1117; border: 1px solid var(--line); border-radius: 8px; padding: 10px; overflow-x: auto; max-height: 420px; color: var(--muted); }
 @media (max-width: 560px) { .verdict { flex-direction: column; } .pill { max-width: 100%; } }
 

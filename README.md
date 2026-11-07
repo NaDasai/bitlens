@@ -52,7 +52,7 @@ account id ─view_code RPC─▶ WASM ─▶ ① risk card ─▶ ② attacks i
    `npm run test:runner` runs the runner's Rust unit tests (argument discovery from contract errors).
    By hand: `npm run attack -- vulnerable-vault.bitlens-demo` → 8 scenarios, `Summary: 6 held, 2 broken, 0 inconclusive`, `VERDICT: DANGEROUS`, exit code 3; `npm run attack -- clean-vault.bitlens-demo` → `7 held, 0 broken`, `VERDICT: SAFE`, exit code 0.
 5. `npm run server` → `BitLens backend on http://localhost:8787` and, a few seconds later, `[engine] attack engine ready`.
-6. Open **http://localhost:8787** for the landing page (what BitLens does, the MCP server and how to add it), then **Open the app**, or go straight to **http://localhost:8787/app**, and follow the demo path below.
+6. Open **http://localhost:8787** for the landing page (what BitLens does, the MCP server and how to add it; its hero replays a real run on the vulnerable-vault demo on a loop: the `admin_drain` drain, then a refused `set_owner`), then **Open the app**, or go straight to **http://localhost:8787/app**, and follow the demo path below.
 7. **Before a live demo:** `npm run preflight` (~4 s) → a ✔/⚠/✘ checklist ending in `Ready to demo.`:
    - Node version and runner build.
    - All four demo verdicts.
@@ -373,7 +373,7 @@ core/       the one engine: RPC, scan, capability rules, attack selection, scena
 server/     HTTP front door (thin) + static web UI from web/
 mcp/        MCP front door (thin, stdio)
 cli/        scan / attack CLIs (thin)
-web/        static HTML/CSS/JS: index.html (landing page), app.html + app.js (the app, at /app), replay.js (attack replay animation), logo.svg; all app text rendered via textContent
+web/        static HTML/CSS/JS: index.html (landing page), app.html + app.js (the app, at /app), replay.js + replay.css (attack replay animation), hero.js (the landing page's looping replay of a recorded real run), logo.svg; all app text rendered via textContent
 runner/     Rust scenario interpreter over near-contract-sim (scenario.rs: format + validation, interp.rs: execution)
 scenarios/  presets/*.json (the six attack templates as canned scenario JSON), examples/*.json
 contracts/  clean / risky / vulnerable / yield-escrow demo contracts (near-sdk 5.29) + res/*.wasm

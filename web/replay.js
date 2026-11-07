@@ -29,8 +29,11 @@ function actionLabel(e) {
  * @param {object} r one entry of report.results
  * @param {Record<string,string>} accounts report.accounts (role → account id)
  * @param {string} contract the contract under test
+ * @param {{controls?: boolean, maxLog?: number, endText?: (r: object) => string, onFinish?: () => void}} [opts]
+ *   controls: show play/pause/step/speed (default true); maxLog: keep only the last N log rows;
+ *   endText: replaces the explanation shown at the end; onFinish: called when the last receipt has played.
  */
-export function replayPanel(r, accounts, contract) {
+export function replayPanel(r, accounts, contract, opts = {}) {
   // Chronological: stable sort by block shows same-block races side by side.
   const events = r.event_sequence.map((e, i) => ({ ...e, i })).sort((a, b) => a.block - b.block || a.i - b.i);
   const roleOf = Object.fromEntries(Object.entries(accounts).map(([role, id]) => [id, role]));
@@ -70,7 +73,8 @@ export function replayPanel(r, accounts, contract) {
   const progress = el("span", "rp-progress", `0 / ${events.length}`);
   controls.append(playBtn, stepBtn, speedBtn, restartBtn, progress);
 
-  root.append(controls, stage, log, end);
+  if (opts.controls === false) root.classList.add("compact");
+  root.append(...(opts.controls === false ? [] : [controls]), stage, log, end);
 
   let next = 0; // index of the next event to play
   let playing = false;
@@ -110,8 +114,18 @@ export function replayPanel(r, accounts, contract) {
     const amt = amount(e.deposit_near);
     const token = el("div", `replay-token ${!e.ok ? "bad" : amt > 0 ? "near" : "call"}`, amt > 0 ? `${e.deposit_near} NEAR` : actionLabel(e));
     fly.append(token);
-    const a = center(e.from);
-    const b = center(e.to);
+    let a = center(e.from);
+    let b = center(e.to);
+    // Side by side: fly from the sender's edge to the receiver's edge, so the
+    // token crosses the gap instead of covering the cards' text.
+    if (e.from !== e.to && Math.abs(b.x - a.x) > Math.abs(b.y - a.y)) {
+      const s = stage.getBoundingClientRect();
+      const ra = nodes.get(e.from).node.getBoundingClientRect();
+      const rb = nodes.get(e.to).node.getBoundingClientRect();
+      const right = b.x > a.x;
+      a = { x: (right ? ra.right : ra.left) - s.left, y: a.y };
+      b = { x: (right ? rb.left : rb.right) - s.left, y: b.y };
+    }
     const place = (p) => `translate(${p.x}px, ${p.y}px) translate(-50%, -50%)`;
     if (REDUCED) {
       token.style.transform = place(b);
@@ -144,6 +158,7 @@ export function replayPanel(r, accounts, contract) {
     for (const old of log.querySelectorAll("li.now")) old.classList.remove("now");
     li.classList.add("now");
     log.append(li);
+    while (opts.maxLog && log.children.length > opts.maxLog) log.firstElementChild.remove();
   }
 
   async function playOne() {
@@ -169,10 +184,11 @@ export function replayPanel(r, accounts, contract) {
     // event list summarises), so the cards end on exactly those numbers.
     for (const [id, d] of Object.entries(r.token_deltas || {})) if (nodes.has(id)) setBalance(id, amount(d.near.replace(/\s*NEAR$/, "")), true);
     const verdict = { broken: "BROKEN", held: "HELD", inconclusive: "INCONCLUSIVE", not_applicable: "N/A", error: "ERROR" }[r.status] || r.status;
-    end.replaceChildren(el("span", `st ${r.status}`, verdict), document.createTextNode(` ${r.explanation}`));
+    end.replaceChildren(el("span", `st ${r.status}`, verdict), document.createTextNode(` ${opts.endText ? opts.endText(r) : r.explanation}`));
     end.classList.add("shown");
     playing = false;
     playBtn.textContent = "▶ Play";
+    opts.onFinish?.();
   }
 
   async function loop() {
@@ -229,5 +245,13 @@ export function replayPanel(r, accounts, contract) {
     requestAnimationFrame(() => loop());
   };
   root.stop = () => reset();
+  /** Jump to the end without animation (reduced motion, or a static snapshot). */
+  root.showFinal = () => {
+    reset();
+    for (const e of events) logRow(e);
+    next = events.length;
+    progress.textContent = `${next} / ${events.length}`;
+    finish();
+  };
   return root;
 }
