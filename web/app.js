@@ -2,6 +2,8 @@
 // Everything from the contract (method names etc.) is untrusted, so the DOM is
 // built with textContent only. No innerHTML anywhere.
 
+import { replayPanel } from "/replay.js";
+
 const $ = (s) => document.querySelector(s);
 const form = $("#scan-form");
 const input = $("#account");
@@ -288,6 +290,27 @@ async function runAttacks(accountId, payload, button, results) {
   }
 }
 
+/** "▶ Replay the attack": opens an animated playback of this result's receipts. */
+function replayToggle(r, report) {
+  const box = h("div", { class: "replay-box", hidden: "hidden" });
+  const btn = h("button", { type: "button", class: `replay-open ${r.status}` }, "▶ Replay the attack");
+  let panel = null;
+  btn.addEventListener("click", () => {
+    if (box.hidden) {
+      panel ??= replayPanel(r, report.accounts, report.account_id);
+      box.replaceChildren(panel);
+      box.hidden = false;
+      btn.textContent = "✕ Close replay";
+      panel.start();
+    } else {
+      panel?.stop();
+      box.hidden = true;
+      btn.textContent = "▶ Replay the attack";
+    }
+  });
+  return h("div", { class: "replay-wrap" }, btn, box);
+}
+
 function renderResults(body, el) {
   const { report, verdict, reasons } = body;
   const s = report.summary;
@@ -333,6 +356,7 @@ function renderResults(body, el) {
           )
         : null,
       r.findings.length ? h("div", { class: "why" }, `sim findings: ${r.findings.join(" | ")}`) : null,
+      r.event_sequence.length ? replayToggle(r, report) : null,
       r.trace ? h("details", {}, h("summary", {}, "full receipt trace (near-contract-sim)"), h("pre", { class: "trace" }, r.trace)) : null,
     ),
   );
