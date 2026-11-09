@@ -41,4 +41,9 @@ for (let i = 0; ; i++) {
   }
   await new Promise((r) => setTimeout(r, 15_000));
 }
+
+// The agent is about to deposit 20 NEAR: BitLens judges it before anything is signed.
+const ck: any = await client.callTool({ name: "check_transaction", arguments: { receiver_id: target, method: "deposit", deposit_near: "20" } });
+console.log(`\ncheck_transaction(deposit 20 NEAR) → ${ck.structuredContent?.decision?.toUpperCase()} | ${ck.structuredContent?.summary}`);
+if (ck.structuredContent?.replay_path) console.log(`  proof: ${ck.structuredContent.evidence[0]?.name} · replay: ${ck.structuredContent.replay_path}`);
 await client.close();

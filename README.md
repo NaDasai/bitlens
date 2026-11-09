@@ -46,9 +46,9 @@ account id ─view_code RPC─▶ WASM ─▶ ① risk card ─▶ ② attacks i
 ### Steps (each with expected output)
 
 1. `npm install`
-2. `npm test` → `# pass 36`, `# fail 0` (account-id validation, capability detection, RPC errors and the offline fallback against a fake RPC, attack selection, verdict rules, scenario validation, and text-to-test with its NEAR AI → OpenRouter fallback against two fake LLM servers; no network).
+2. `npm test` → `# pass 40`, `# fail 0` (account-id validation, capability detection, RPC errors and the offline fallback against a fake RPC, attack selection, verdict rules, the pre-signature allow / confirm / block policy, scenario validation, and text-to-test with its NEAR AI → OpenRouter fallback against two fake LLM servers; no network).
 3. `npm run build:runner` (the first-build warning above applies) → ends with `Finished \`release\` profile [optimized]`; the binary is `runner/target/release/bitlens-runner`. You can skip this: the server and MCP server start the same build in the background if the binary is missing.
-4. `npm run test:sim` → `# pass 9`, ~2 s. Pins the status of **every** scenario on all four demo contracts, plus the risk level and verdict, through the real engine. It also runs custom scenario JSON end to end, checks that the runner rejects malformed scenarios on its own, and checks that the text-to-test eval set's expected results match these pinned statuses. If it passes, the demo tells the same story.
+4. `npm run test:sim` → `# pass 10`, ~3 s. Pins the status of **every** scenario on all four demo contracts, plus the risk level and verdict, through the real engine. It also runs custom scenario JSON end to end, checks that the runner rejects malformed scenarios on its own, checks that the text-to-test eval set's expected results match these pinned statuses, and pins `check_transaction`'s decision for a 20 NEAR deposit into each demo contract. If it passes, the demo tells the same story.
    `npm run test:runner` runs the runner's Rust unit tests (argument discovery from contract errors).
    By hand: `npm run attack -- vulnerable-vault.bitlens-demo` → 8 scenarios, `Summary: 6 held, 2 broken, 0 inconclusive`, `VERDICT: DANGEROUS`, exit code 3; `npm run attack -- clean-vault.bitlens-demo` → `7 held, 0 broken`, `VERDICT: SAFE`, exit code 0.
 5. `npm run server` → `BitLens backend on http://localhost:8787` and, a few seconds later, `[engine] attack engine ready`.
@@ -59,7 +59,7 @@ account id ─view_code RPC─▶ WASM ─▶ ① risk card ─▶ ② attacks i
    - Live RPC for wrap.near / token.sweat / aurora. This also refreshes the offline copy of their code (see below).
    - Port 8787 free.
    - LLM keys for text-to-test: NEAR AI → OpenRouter (⚠ if neither is set; text-to-test is optional).
-   - MCP server starts and lists 5 tools.
+   - MCP server starts and lists 6 tools, including `check_transaction`.
 
    Exit code 1 if anything the demo needs is broken.
 
@@ -118,7 +118,26 @@ An agent that is about to call, deposit into or approve a NEAR contract can ask 
 | `list_attacks(account_id, include_scenarios?)` | scenarios that apply, with ids (and their scenario JSON, as examples) | instant |
 | `run_attacks(account_id, scenario_ids?)` | runs them in the local sim: status, explanation, receipt sequence, NEAR deltas | ~1 s |
 | `assess_contract(account_id)` | scan + all attacks → `safe` / `caution` / `dangerous` with reasons | ~1 s |
+| `check_transaction(receiver_id, method, deposit_near?, args?, mode?)` | **call it right before signing**: judges the transaction the agent is about to sign → `allow` / `confirm` / `block`, with the reasons, the simulated attack that justifies a block (receipts, who gained NEAR) and a replay link. BitLens never signs. | ~1-2 s |
 | `run_custom_attack(account_id, description \| scenario, dry_run?)` | your own attack idea: plain English (translated by the LLM) or scenario JSON the agent wrote, run in the sim; returns the scenario and its result | ~1 s (+ LLM) |
+
+### Pre-signature check (`check_transaction`)
+
+The agent proposes the transaction it is about to sign (contract, method, attached NEAR, args). BitLens runs the same evaluation as `assess_contract` and answers with a decision. **It never signs or sends anything**: the agent's wallet signs only on `allow`, asks a human on `confirm`, and does not sign on `block` or on any error.
+
+| Situation | `standard` (default) | `strict` |
+|---|---|---|
+| method not exported by the contract, account missing or without a contract | block | block |
+| DANGEROUS (an attack succeeded) and NEAR attached | **block** | block |
+| DANGEROUS, no NEAR attached | confirm | block |
+| CAUTION (not proven safe) and NEAR attached | confirm | block |
+| CAUTION, no NEAR attached | allow | confirm |
+| SAFE (all attacks held, low capability risk) | allow | allow |
+| attack engine not built yet, NEAR attached | confirm | block |
+
+On a block, `evidence` lists the successful attacks, the one that moved the most NEAR first, with their receipts and NEAR deltas. `replay_path` (`/app?account=…&replay=<attack id>`) opens the web app, runs the attacks and replays that one as an animation. Also available as `POST /check` and `npm run check -- <contract> <method> --deposit 20` (exit code 0 allow, 1 confirm, 2 block, 3 error).
+
+Demo contracts, `deposit` with 20 NEAR (pinned by `npm run test:sim`): vulnerable-vault **block** (proof: the `admin_drain` drain, +67.8015 NEAR to the attacker), yield-escrow **block**, risky-vault **confirm**, clean-vault **allow**.
 
 Every tool is read-only (`readOnlyHint`). Inputs are untrusted: `account_id` is validated against NEAR's account-id rules before any use, and bad ids return `isError` with `INVALID_ACCOUNT_ID`. While the engine is still building or warming, `run_attacks` says so, and `assess_contract` returns a scan-only `caution` marked `attacks_run: false`. Neither blocks. Logs go to stderr.
 
@@ -143,7 +162,13 @@ claude mcp add bitlens -- "$PWD/node_modules/.bin/tsx" "$PWD/mcp/server.ts"
 
 `claude mcp list` → `bitlens: … - ✓ Connected`.
 
-**Verified agent run** (headless Claude Code with only this server's tools allowed):
+**Verified agent run: pre-signature check** (headless Claude Code, only `check_transaction` and `assess_contract` allowed; 3 turns, ~11 s):
+
+> *Prompt:* "You are a wallet agent. Your user asked: 'Deposit 20 NEAR into vulnerable-vault.bitlens-demo by calling its deposit method.' Before you sign any transaction you must check it with BitLens."
+>
+> *Agent:* I would **not sign** this transaction. BitLens checked `deposit` with 20 NEAR attached on `vulnerable-vault.bitlens-demo` and returned **BLOCK**: it rated the contract dangerous and high risk, and two attacks worked in its simulation. 1. **Anyone can drain it:** the simulated attacker's call to `admin_drain` moved the vault's whole simulated balance (+67.8 NEAR) to itself. 2. **Double withdrawal:** two `withdraw` calls in the same block both paid out. Your 20 NEAR would be at risk from both bugs. I won't sign this one.
+
+**Verified agent run: assessment** (headless Claude Code with only this server's tools allowed):
 
 > *Prompt:* "I'm about to deposit 20 NEAR into the contract vulnerable-vault.bitlens-demo. Is that safe?"
 >
@@ -151,9 +176,9 @@ claude mcp add bitlens -- "$PWD/node_modules/.bin/tsx" "$PWD/mcp/server.ts"
 > 1. Anyone can call `admin_drain`: an attacker account emptied the whole vault (67.8 NEAR) with no owner check.
 > 2. Two `withdraw` calls in the same block both paid out (5 NEAR deposited, 10 NEAR back), with the extra coming from other depositors' money.
 
-Without an agent: `node_modules/.bin/tsx scripts/mcp-smoke.ts --wait` drives the server with the SDK client. It lists the 5 tools, checks that a bad id is rejected, lists attacks, then calls `assess_contract` until the engine is warm → `DANGEROUS`.
+Without an agent: `node_modules/.bin/tsx scripts/mcp-smoke.ts --wait` drives the server with the SDK client. It lists the 6 tools, checks that a bad id is rejected, lists attacks, calls `assess_contract` until the engine is warm → `DANGEROUS`, then `check_transaction` for a 20 NEAR deposit → `BLOCK` with the drain as proof.
 
-**Verified on a fresh clone:** the server starts as `bitlens` with all 5 tools. `scan_contract wrap.near` returns the live card (risk LOW). A bad id comes back as `isError` with `INVALID_ACCOUNT_ID`. `assess_contract vulnerable-vault.bitlens-demo` returns DANGEROUS. `run_custom_attack` returns HELD on clean-vault with the takeover scenario JSON (`scenarios/examples/takeover.json`), and HELD on risky-vault with a plain-English attack (see the table under [Text-to-test](#text-to-test-plain-english--test)).
+**Verified on a fresh clone:** the server starts as `bitlens` with all its tools (5 at the time; `check_transaction` was added later). `scan_contract wrap.near` returns the live card (risk LOW). A bad id comes back as `isError` with `INVALID_ACCOUNT_ID`. `assess_contract vulnerable-vault.bitlens-demo` returns DANGEROUS. `run_custom_attack` returns HELD on clean-vault with the takeover scenario JSON (`scenarios/examples/takeover.json`), and HELD on risky-vault with a plain-English attack (see the table under [Text-to-test](#text-to-test-plain-english--test)).
 
 ## Text-to-test (plain English → test)
 
@@ -345,6 +370,7 @@ Each result has: name, status (`held` / `broken` / `inconclusive` / `not_applica
 - `GET /attacks?account_id=…` → applicable scenarios.
 - `POST /attack {"account_id", "scenario_ids"?}` → `{report, verdict, reasons}`.
 - `GET /engine` → `{state: cold|building|warming|ready|failed, elapsed_s}`.
+- `POST /check {"receiver_id", "method", "deposit_near"?, "args"?, "mode"?}` → `{decision: allow|confirm|block, summary, reasons, evidence, replay_path, signing}` (see *Pre-signature check*).
 - `POST /attack {"account_id", "scenarios": [<scenario JSON>]}` → runs custom scenarios instead of the presets.
 - `POST /translate {"account_id", "sentence"}` → `{scenario, provider, model, attempts, fallback_from?}`.
 - `GET /llm` → `{configured, provider, model, providers: [...]}` (never the keys).
@@ -357,6 +383,7 @@ Each result has: name, status (`held` / `broken` / `inconclusive` / `not_applica
 CLI:
 - `npm run scan -- <ids…> [--json]`, or `npm run scan -- --wasm file.wasm` (offline; `scripts/fetch-reference-wasm.sh` downloads public builds of wrap/aurora/sweat).
 - `npm run attack -- <id> [--list] [--only a,b] [--json] [--trace]` (exit code 3 if anything is broken).
+- `npm run check -- <contract> <method> [--deposit 20] [--args '{…}'] [--strict] [--json]` judges a transaction before signing (exit code 0 allow, 1 confirm, 2 block, 3 error).
 - `npm run attack -- <id> --scenario file.json` runs your own scenario JSON. `--say "english"` translates a sentence with the LLM first. `--print-scenario` prints the JSON; with `--list`, it prints every preset's JSON.
 
 Environment:

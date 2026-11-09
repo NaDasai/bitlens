@@ -26,3 +26,4 @@ export { validateScenario, fillPreset, scenarioMethods, PRESETS, ScenarioError, 
 export { translateToScenario, type Translation } from "./textToTest.js";
 export { standardSignatures, standardArgs, formatSignature, argTypeProblems, type StandardSignature } from "./standards.js";
 export { llmStatus, llmProviders, chatJson, resetLlmCooldown, DEFAULT_NEAR_AI_MODEL, DEFAULT_OPEN_ROUTER_MODEL } from "./llm.js";
+export { checkTransaction, decide, normaliseTransaction, type Decision, type FirewallMode, type FirewallResult, type ProposedTransaction } from "./firewall.js";
