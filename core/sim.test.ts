@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { test } from "node:test";
 import { readFileSync } from "node:fs";
-import { RUNNER_BIN, runAttacks, scan, verdictOf } from "./index.js";
+import { checkTransaction, RUNNER_BIN, runAttacks, scan, verdictOf } from "./index.js";
 
 const built = existsSync(RUNNER_BIN);
 const H = "held", B = "broken";
@@ -128,4 +128,16 @@ test("text-to-test eval set: every expected result matches its preset's pinned s
     assert.ok(pinned, `${c.id}: ${c.preset} is not a pinned preset of ${c.contract}`);
     assert.equal(c.expect, pinned, `${c.id}: expects ${c.expect} but the sim gives ${pinned} for ${c.preset}`);
   }
+});
+
+// Pre-signature check on the demo contracts: an agent about to deposit 20 NEAR.
+test("check_transaction: deposit 20 NEAR into each demo contract", { skip: !built && "runner not built" }, async () => {
+  const dep = (c: string) => checkTransaction({ receiver_id: c, method: "deposit", deposit_near: "20" });
+  const v = await dep("vulnerable-vault.bitlens-demo");
+  assert.equal(v.decision, "block");
+  assert.equal(v.evidence[0].id, "unauth:admin_drain", "the drain is the proof shown first");
+  assert.equal(v.replay_path, "/app?account=vulnerable-vault.bitlens-demo&replay=unauth%3Aadmin_drain");
+  assert.equal((await dep("yield-escrow.bitlens-demo")).decision, "block");
+  assert.equal((await dep("risky-vault.bitlens-demo")).decision, "confirm");
+  assert.equal((await dep("clean-vault.bitlens-demo")).decision, "allow");
 });

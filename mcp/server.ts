@@ -2,7 +2,7 @@
  * MCP front door (stdio): BitLens as a tool for AI agents.
  * A thin wrapper over core/: no scan/attack logic here.
  *
- * Tools: scan_contract, list_attacks, run_attacks, assess_contract, run_custom_attack.
+ * Tools: scan_contract, list_attacks, run_attacks, assess_contract, check_transaction, run_custom_attack.
  * All are read-only with respect to every real network: scans make RPC view
  * queries; attacks run in a local near-contract-sim and never sign or send a
  * transaction anywhere. stdout is the MCP channel, so all logging goes to stderr.
@@ -12,6 +12,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import {
   assertAccountId,
+  checkTransaction,
   engineStatus,
   EngineNotReadyError,
   listAttacks,
@@ -212,6 +213,34 @@ server.registerTool(
       const { verdict, reasons } = verdictOf(card, report);
       const data = { account_id: id, verdict, verdict_reasons: reasons, attacks_run: true, capabilities: cardForAgent(card), attacks: reportForAgent(report) };
       return ok(`${id}: ${verdict.toUpperCase()}. ${reasons[0] ?? ""}`, data);
+    } catch (e) {
+      return fail(e);
+    }
+  },
+);
+
+server.registerTool(
+  "check_transaction",
+  {
+    title: "Check a NEAR transaction before signing it",
+    description:
+      "Call this right BEFORE signing any NEAR function-call transaction (deposit, swap, approve, ...). Give the transaction you are about to sign; BitLens evaluates the receiving contract (bytecode capabilities + every suggested attack run in a local simulator) and answers decision: allow / confirm / block, with the reasons and, on block, the simulated attack that justifies it (receipts and who gained NEAR) plus a replay link. " +
+      'Sign only on "allow". On "confirm", ask the human first. On "block" or any error, do not sign. ' +
+      'Policy (mode "standard"): block when NEAR would be attached to a contract where an attack succeeded, or when the method does not exist; confirm when attaching NEAR to a contract not proven safe. mode "strict": block anything not proven safe. ' +
+      "BitLens never signs or sends anything.",
+    inputSchema: {
+      receiver_id: accountId.describe("The contract the transaction calls."),
+      method: z.string().min(1).max(64).describe("The method the transaction calls, e.g. \"deposit\"."),
+      deposit_near: z.string().max(40).optional().describe('NEAR attached to the call, as a decimal string, e.g. "20". Default "0".'),
+      args: z.record(z.string(), z.unknown()).optional().describe("The call arguments (recorded in the answer)."),
+      mode: z.enum(["standard", "strict"]).optional().describe('"standard" (default) or "strict".'),
+    },
+    annotations: { readOnlyHint: true, openWorldHint: true },
+  },
+  async ({ receiver_id, method, deposit_near, args, mode }) => {
+    try {
+      const r = await checkTransaction({ receiver_id, method, deposit_near, args }, mode ?? "standard");
+      return ok(`${r.summary}\n${r.signing}`, r as unknown as Record<string, unknown>);
     } catch (e) {
       return fail(e);
     }

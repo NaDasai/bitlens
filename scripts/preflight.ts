@@ -81,7 +81,7 @@ try {
   await client.connect(transport);
   const { tools } = await client.listTools();
   const names = tools.map((t) => t.name).sort().join(", ");
-  tools.length === 5 ? ok(`MCP server starts over stdio; tools: ${names}`) : bad(`MCP server lists ${tools.length} tools: ${names}`);
+  tools.length === 6 && names.includes("check_transaction") ? ok(`MCP server starts over stdio; tools: ${names}`) : bad(`MCP server lists ${tools.length} tools: ${names}`);
   await client.close();
 } catch (e: any) {
   bad(`MCP server: ${e.message}`);

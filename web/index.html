@@ -62,7 +62,7 @@
   <div><b>0</b><span>transactions sent</span></div>
   <div><b>6</b><span>attack families</span></div>
   <div><b>~1 s</b><span>per full assessment</span></div>
-  <div><b>5</b><span>MCP tools for agents</span></div>
+  <div><b>6</b><span>MCP tools for agents</span></div>
 </section>
 
 <section id="how" class="wrap section">
@@ -105,10 +105,11 @@
 
 <section id="mcp" class="wrap section mcp">
   <p class="eyebrow">For AI agents</p>
-  <h2>An MCP server: let your agent ask BitLens first</h2>
-  <p class="lead small-lead">An agent that is about to call, deposit into or approve a NEAR contract can check it first. BitLens ships an MCP server (stdio, official SDK). Every tool is read-only and validates its input.</p>
+  <h2>An MCP server: your agent checks before it signs</h2>
+  <p class="lead small-lead">Before signing, the agent hands BitLens the transaction it is about to send. BitLens attacks the contract in a local simulator and answers <b>allow</b>, <b>confirm</b> or <b>block</b>, with the attack that proves it. BitLens never signs: the agent's wallet signs only on allow. MCP server over stdio (official SDK); every tool is read-only and validates its input.</p>
 
   <div class="tools">
+    <div class="tool-key"><code>check_transaction</code><p>Call it right before signing: <b>allow</b> / <b>confirm</b> / <b>block</b>, with the proof and a replay link.</p></div>
     <div><code>scan_contract</code><p>Capability risk card from the bytecode. Instant.</p></div>
     <div><code>list_attacks</code><p>The attack scenarios that apply, with their scenario JSON.</p></div>
     <div><code>run_attacks</code><p>Runs them in the local sim: status, explanation, receipts, NEAR deltas.</p></div>
@@ -137,9 +138,11 @@
       <p class="muted small">Run it from a clone of the repo after <code>npm install</code> and <code>npm run build:runner</code>. Plain-English attacks need <code>NEAR_AI_API_KEY</code> or <code>OPEN_ROUTER_KEY</code>.</p>
     </div>
     <div class="chat">
-      <div class="msg user"><span class="who">You</span>I'm about to deposit 20 NEAR into vulnerable-vault. Is that safe?</div>
-      <div class="msg tool mono">→ assess_contract("vulnerable-vault.bitlens-demo")</div>
-      <div class="msg agent"><span class="who">Agent</span><b>No, don't deposit.</b> BitLens rates it <b class="broken-t">dangerous</b>: anyone can call <code>admin_drain</code> and empty the vault (67.8 NEAR), and two same-block <code>withdraw</code> calls both pay out, with the extra coming from other depositors.</div>
+      <div class="msg user"><span class="who">You</span>Deposit 20 NEAR into vulnerable-vault.bitlens-demo.</div>
+      <div class="msg tool mono">→ check_transaction(receiver_id: "vulnerable-vault.bitlens-demo", method: "deposit", deposit_near: "20")</div>
+      <div class="msg tool-answer"><span class="st broken">BLOCK</span> 2 attacks succeeded in simulation · proof: <code>admin_drain</code> moved +67.8015 NEAR to the attacker</div>
+      <div class="msg agent"><span class="who">Agent</span><b>I won't sign this.</b> BitLens returned <b class="broken-t">BLOCK</b>: anyone can call <code>admin_drain</code> and take the whole vault (+67.8 NEAR in simulation), and two same-block <code>withdraw</code> calls both pay out. Your 20 NEAR would be at risk from both bugs.</div>
+      <a class="replay-link" href="/app?account=vulnerable-vault.bitlens-demo&amp;replay=unauth%3Aadmin_drain">▶ Replay the attack that blocked it</a>
       <p class="muted small">Condensed from a real agent run (headless Claude Code, only BitLens's tools allowed).</p>
     </div>
   </div>

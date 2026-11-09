@@ -182,6 +182,8 @@ form.addEventListener("submit", (e) => {
 document.querySelectorAll(".ex").forEach((b) => b.addEventListener("click", () => runScan(b.dataset.id)));
 
 const initial = new URLSearchParams(location.search).get("account");
+// ?replay=<attack id> (e.g. from check_transaction): run the attacks and replay that one.
+let pendingReplay = (new URLSearchParams(location.search).get("replay") || "").slice(0, 100) || null;
 if (initial) runScan(initial);
 
 // ---------------------------------------------------------------------------
@@ -262,6 +264,7 @@ async function loadAttacks(accountId) {
     customBlock(accountId, list, ai),
   );
   attacksEl.hidden = false;
+  if (pendingReplay && list.some((a) => a.id === pendingReplay)) run.click();
 }
 
 async function runAttacks(accountId, payload, button, results) {
@@ -328,7 +331,7 @@ function renderResults(body, el) {
   const items = report.results.map((r) =>
     h(
       "div",
-      { class: `result ${r.status}` },
+      { class: `result ${r.status}`, "data-id": r.id },
       h("div", { class: "rhead" }, h("span", { class: `st ${r.status}` }, STATUS_LABEL[r.status]), h("span", { class: "lbl" }, r.name)),
       h("div", { class: "expl" }, r.explanation),
       r.event_sequence.length
@@ -361,6 +364,15 @@ function renderResults(body, el) {
     ),
   );
   el.replaceChildren(h("div", { class: "block" }, verdictBox, init), h("div", { class: "block" }, items));
+  if (pendingReplay) {
+    const target = [...el.querySelectorAll(".result")].find((x) => x.dataset.id === pendingReplay);
+    pendingReplay = null;
+    const open = target?.querySelector(".replay-open");
+    if (open) {
+      target.scrollIntoView({ behavior: "smooth", block: "start" });
+      open.click();
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------

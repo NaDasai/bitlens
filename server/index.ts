@@ -8,6 +8,7 @@
  *   GET  /engine                     attack-engine warm-up status
  *   POST /attack {"account_id","scenarios":[…]}  run custom scenario JSON instead
  *   POST /translate {"account_id","sentence"}    English → scenario JSON (NEAR AI Cloud, fallback OpenRouter)
+ *   POST /check {"receiver_id","method","deposit_near"?,"args"?,"mode"?}  judge a transaction before signing: allow / confirm / block
  *   GET  /llm                        text-to-test LLM configuration (never the key)
  *   GET  /       landing page;  GET /app  the web app (static, web/)
  */
@@ -16,6 +17,7 @@ import { readFile } from "node:fs/promises";
 import { extname, join, normalize, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  checkTransaction,
   InputError,
   llmStatus,
   scan as scanCard,
@@ -113,6 +115,11 @@ export const server = createServer(async (req, res) => {
       }
       const { card, report } = await runAttacks(body.account_id, body.scenario_ids, { custom: body.scenarios });
       return sendJson(res, 200, { report, ...verdictOf(card, report) });
+    }
+
+    if (url.pathname === "/check" && req.method === "POST") {
+      const body = await readJson(req);
+      return sendJson(res, 200, await checkTransaction(body.transaction ?? body, body.mode ?? "standard"));
     }
 
     if (req.method === "GET") return serveStatic(url.pathname, res);
