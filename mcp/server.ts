@@ -97,6 +97,7 @@ function reportForAgent(report: AttackReport) {
     sim_accounts: report.accounts,
     contract_initialised: report.init.ok ? `${report.init.method} (by ${report.init.signer})` : false,
     summary: report.summary,
+    ...(report.cache ? { cached: `results from the cache: same contract code (${report.code_hash}), simulated ${report.cache.age_s}s ago` } : {}),
     results: report.results.map(resultForAgent),
   };
 }

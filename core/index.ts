@@ -9,6 +9,7 @@ export {
   suggestAttacks,
   listAttacks,
   runAttacks,
+  clearAttackCache,
   customAttacks,
   verdictOf,
   warmupSpec,

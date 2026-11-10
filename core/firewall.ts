@@ -37,7 +37,15 @@ export interface FirewallResult {
   reasons: string[];
   mode: FirewallMode;
   transaction: { receiver_id: string; method: string; deposit_near: string; args: Record<string, unknown> | null };
-  contract: { account_id: string; verdict: Verdict | null; risk_level: string | null; code_hash: string | null; attacks_run: boolean };
+  contract: {
+    account_id: string;
+    verdict: Verdict | null;
+    risk_level: string | null;
+    code_hash: string | null;
+    attacks_run: boolean;
+    /** Set when the attack results came from the cache (same code, simulated this many seconds ago). */
+    attacks_cached_age_s?: number | null;
+  };
   /** The broken attacks behind a block (status, explanation, receipts, NEAR deltas). */
   evidence: Pick<AttackResult, "id" | "name" | "status" | "explanation" | "event_sequence" | "token_deltas">[];
   /** Opens the web app on this contract and replays the first attack in `evidence`. */
@@ -80,7 +88,7 @@ export function decide(card: RiskCard, report: AttackReport | null, tx: Firewall
   const base = {
     mode,
     transaction: tx,
-    contract: { account_id: card.account_id, verdict, risk_level: card.risk.level, code_hash: card.code_hash, attacks_run: Boolean(report) },
+    contract: { account_id: card.account_id, verdict, risk_level: card.risk.level, code_hash: card.code_hash, attacks_run: Boolean(report), attacks_cached_age_s: report?.cache?.age_s ?? null },
     signing: SIGNING_NOTE,
   };
   const out = (decision: Decision, summary: string, reasons: string[], evidence: AttackResult[] = []): FirewallResult => ({

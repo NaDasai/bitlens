@@ -48,7 +48,7 @@ account id ─view_code RPC─▶ WASM ─▶ ① risk card ─▶ ② attacks i
 1. `npm install`
 2. `npm test` → `# pass 40`, `# fail 0` (account-id validation, capability detection, RPC errors and the offline fallback against a fake RPC, attack selection, verdict rules, the pre-signature allow / confirm / block policy, scenario validation, and text-to-test with its NEAR AI → OpenRouter fallback against two fake LLM servers; no network).
 3. `npm run build:runner` (the first-build warning above applies) → ends with `Finished \`release\` profile [optimized]`; the binary is `runner/target/release/bitlens-runner`. You can skip this: the server and MCP server start the same build in the background if the binary is missing.
-4. `npm run test:sim` → `# pass 10`, ~3 s. Pins the status of **every** scenario on all four demo contracts, plus the risk level and verdict, through the real engine. It also runs custom scenario JSON end to end, checks that the runner rejects malformed scenarios on its own, checks that the text-to-test eval set's expected results match these pinned statuses, and pins `check_transaction`'s decision for a 20 NEAR deposit into each demo contract. If it passes, the demo tells the same story.
+4. `npm run test:sim` → `# pass 11`, ~3 s. Pins the status of **every** scenario on all four demo contracts, plus the risk level and verdict, through the real engine. It also runs custom scenario JSON end to end, checks that the runner rejects malformed scenarios on its own, checks that the text-to-test eval set's expected results match these pinned statuses, pins `check_transaction`'s decision for a 20 NEAR deposit into each demo contract, and checks the results cache. If it passes, the demo tells the same story.
    `npm run test:runner` runs the runner's Rust unit tests (argument discovery from contract errors).
    By hand: `npm run attack -- vulnerable-vault.bitlens-demo` → 8 scenarios, `Summary: 6 held, 2 broken, 0 inconclusive`, `VERDICT: DANGEROUS`, exit code 3; `npm run attack -- clean-vault.bitlens-demo` → `7 held, 0 broken`, `VERDICT: SAFE`, exit code 0.
 5. `npm run server` → `BitLens backend on http://localhost:8787` and, a few seconds later, `[engine] attack engine ready`.
@@ -136,6 +136,8 @@ The agent proposes the transaction it is about to sign (contract, method, attach
 | attack engine not built yet, NEAR attached | confirm | block |
 
 On a block, `evidence` lists the successful attacks, the one that moved the most NEAR first, with their receipts and NEAR deltas. `replay_path` (`/app?account=…&replay=<attack id>`) opens the web app, runs the attacks and replays that one as an animation. Also available as `POST /check` and `npm run check -- <contract> <method> --deposit 20` (exit code 0 allow, 1 confirm, 2 block, 3 error).
+
+**Results cache.** The same contract code, the same attacks and the same runner build give the same results, so the server and the MCP server keep each attack report in memory, keyed by account, `code_hash`, the set of attacks and the runner build (default 10 min, `BITLENS_CACHE_TTL_S`, `0` disables). The code is still fetched on every call, which is what notices an upgrade: new code, new key, fresh simulation. Custom scenarios (text-to-test, hand-written JSON) and failed runs are never cached, and concurrent identical requests share one simulation. A cached answer says so: `cache: {hit, age_s}` in the report, `contract.attacks_cached_age_s` in `check_transaction`, a "cached" line in MCP, the CLI and the web app. Measured in one MCP session, `check_transaction` called twice: vulnerable-vault 162 → **10 ms**, token.sweat 1278 → 459 ms, wrap.near 493 → 339 ms (what remains on mainnet is fetching the code over RPC).
 
 Demo contracts, `deposit` with 20 NEAR (pinned by `npm run test:sim`): vulnerable-vault **block** (proof: the `admin_drain` drain, +67.8015 NEAR to the attacker), yield-escrow **block**, risky-vault **confirm**, clean-vault **allow**.
 
@@ -391,6 +393,7 @@ Environment:
 - `PORT`: default 8787.
 - `BITLENS_RUNNER_BIN`: path to a prebuilt runner.
 - `BITLENS_CACHE_DIR`: where the offline code copies go (default `.cache/code/`).
+- `BITLENS_CACHE_TTL_S`: how long attack results stay in the in-memory cache (default `600`; `0` disables it). See *Results cache*.
 - `HTTPS_PROXY` / `NO_PROXY`: honoured.
 
 ## Repo layout
