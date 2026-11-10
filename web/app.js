@@ -321,7 +321,7 @@ function renderResults(body, el) {
     "div",
     { class: `verdict ${verdict}` },
     h("div", { class: "v" }, VERDICT_LABEL[verdict]),
-    h("div", {}, h("div", { class: "counts" }, `${s.broken} broken · ${s.held} held · ${s.inconclusive} inconclusive${s.not_applicable ? ` · ${s.not_applicable} n/a` : ""} · ${(report.duration_ms / 1000).toFixed(1)} s`), h("ul", { class: "reasons" }, reasons.map((r) => h("li", {}, r)))),
+    h("div", {}, h("div", { class: "counts" }, `${s.broken} broken · ${s.held} held · ${s.inconclusive} inconclusive${s.not_applicable ? ` · ${s.not_applicable} n/a` : ""} · ${(report.duration_ms / 1000).toFixed(1)} s${report.cache ? ` (cached: same code simulated ${report.cache.age_s}s ago)` : ""}`), h("ul", { class: "reasons" }, reasons.map((r) => h("li", {}, r)))),
   );
   const init = h(
     "div",

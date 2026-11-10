@@ -6,12 +6,13 @@
  *   translated from English by textToTest.ts) are the same JSON.
  */
 import { createHash } from "node:crypto";
+import { statSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { base58, scanWithCode, type RiskCard } from "./scan.js";
 import { DEMO_CONTRACTS, readDemoWasm } from "./demo.js";
-import { runSpec } from "./engine.js";
+import { RUNNER_BIN, runSpec } from "./engine.js";
 import { InputError } from "./errors.js";
 import { fillPreset, validateScenario, type Scenario } from "./scenario.js";
 import type { RpcOptions } from "./rpc.js";
@@ -75,6 +76,8 @@ export interface AttackReport {
   results: AttackResult[];
   summary: { held: number; broken: number; inconclusive: number; not_applicable: number; error: number };
   duration_ms: number;
+  /** Set when the results came from the in-memory cache (same contract code, same attacks, same runner). */
+  cache?: { hit: true; age_s: number };
 }
 
 // --- argument guessing -------------------------------------------------------
@@ -282,13 +285,12 @@ export async function runAttacks(
       },
     };
   }
-  const raw = await runSpec<any>(buildSpec(card, await wasmFile(wasm), chosen));
-  const results: AttackResult[] = raw.scenarios;
-  const summary = { held: 0, broken: 0, inconclusive: 0, not_applicable: 0, error: 0 };
-  for (const r of results) summary[r.status]++;
-  return {
-    card,
-    report: {
+  const simulate = async (): Promise<AttackReport> => {
+    const raw = await runSpec<any>(buildSpec(card, await wasmFile(wasm), chosen));
+    const results: AttackResult[] = raw.scenarios;
+    const summary = { held: 0, broken: 0, inconclusive: 0, not_applicable: 0, error: 0 };
+    for (const r of results) summary[r.status]++;
+    return {
       account_id: card.account_id,
       code_hash: card.code_hash,
       engine: raw.engine,
@@ -298,8 +300,76 @@ export async function runAttacks(
       results,
       summary,
       duration_ms: Date.now() - t0,
-    },
+    };
   };
+  // Custom scenarios (text-to-test, hand-written JSON) are never cached.
+  if (extra.length) return { card, report: await simulate() };
+  const key = cacheKey(card, chosen);
+  const hit = key ? cachedReport(key) : null;
+  if (hit) return { card, report: { ...hit.report, duration_ms: Date.now() - t0, cache: { hit: true, age_s: Math.round((Date.now() - hit.at) / 1000) } } };
+  return { card, report: await rememberReport(key, simulate) };
+}
+
+// --- results cache -------------------------------------------------------------
+//
+// Same contract code (code_hash) + same attacks + same runner build = same
+// results, so a second assess_contract / check_transaction on a contract is
+// instant. The code is still fetched on every call: that is what notices an
+// upgrade (new code_hash, new key). In memory only; BITLENS_CACHE_TTL_S (default
+// 600, 0 disables) sets how long an entry lives.
+
+type CacheEntry = { at: number; report?: AttackReport; pending?: Promise<AttackReport> };
+const reportCache = new Map<string, CacheEntry>();
+const CACHE_MAX = 200;
+
+function cacheTtlMs(): number {
+  const s = Number(process.env.BITLENS_CACHE_TTL_S ?? 600);
+  return Number.isFinite(s) && s > 0 ? s * 1000 : 0;
+}
+
+function cacheKey(card: RiskCard, chosen: AttackScenario[]): string | null {
+  if (!cacheTtlMs()) return null;
+  let runner = "";
+  try {
+    runner = String(statSync(RUNNER_BIN).mtimeMs); // a rebuilt runner invalidates every entry
+  } catch {
+    return null;
+  }
+  return [card.account_id, card.code_hash, runner, chosen.map((a) => a.id).sort().join(",")].join("|");
+}
+
+function cachedReport(key: string): { report: AttackReport; at: number } | null {
+  const e = reportCache.get(key);
+  if (!e?.report) return null;
+  if (Date.now() - e.at > cacheTtlMs()) {
+    reportCache.delete(key);
+    return null;
+  }
+  return { report: structuredClone(e.report), at: e.at };
+}
+
+/** Run once per key: concurrent identical requests share one simulation; failures are not cached. */
+async function rememberReport(key: string | null, simulate: () => Promise<AttackReport>): Promise<AttackReport> {
+  if (!key) return simulate();
+  const inflight = reportCache.get(key)?.pending;
+  if (inflight) return structuredClone(await inflight);
+  const pending = simulate();
+  reportCache.set(key, { at: Date.now(), pending });
+  try {
+    const report = await pending;
+    reportCache.delete(key); // re-insert: Map order = age, oldest evicted first
+    reportCache.set(key, { at: Date.now(), report });
+    while (reportCache.size > CACHE_MAX) reportCache.delete(reportCache.keys().next().value!);
+    return structuredClone(report);
+  } catch (e) {
+    reportCache.delete(key);
+    throw e;
+  }
+}
+
+/** Forget every cached attack report (tests). */
+export function clearAttackCache() {
+  reportCache.clear();
 }
 
 /** The throwaway warm-up spec: one attack on the bundled clean vault. */

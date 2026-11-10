@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { test } from "node:test";
 import { readFileSync } from "node:fs";
-import { checkTransaction, RUNNER_BIN, runAttacks, scan, verdictOf } from "./index.js";
+import { checkTransaction, clearAttackCache, RUNNER_BIN, runAttacks, scan, verdictOf } from "./index.js";
 
 const built = existsSync(RUNNER_BIN);
 const H = "held", B = "broken";
@@ -140,4 +140,42 @@ test("check_transaction: deposit 20 NEAR into each demo contract", { skip: !buil
   assert.equal((await dep("yield-escrow.bitlens-demo")).decision, "block");
   assert.equal((await dep("risky-vault.bitlens-demo")).decision, "confirm");
   assert.equal((await dep("clean-vault.bitlens-demo")).decision, "allow");
+});
+
+// Results cache: same code + same attacks + same runner = same results, without re-running the sim.
+test("attack results are cached per contract code; custom scenarios and other attack sets are not", { skip: !built && "runner not built" }, async () => {
+  const V = "vulnerable-vault.bitlens-demo";
+  clearAttackCache();
+  const first = await runAttacks(V);
+  assert.equal(first.report.cache, undefined, "first run simulates");
+  const second = await runAttacks(V);
+  assert.equal(second.report.cache?.hit, true, "second run comes from the cache");
+  assert.deepEqual(
+    second.report.results.map((r) => [r.id, r.status]),
+    first.report.results.map((r) => [r.id, r.status]),
+  );
+  assert.ok(second.report.duration_ms <= first.report.duration_ms, "and is not slower");
+
+  // The cached copy is independent: changing it does not change the cache.
+  second.report.results[0].status = "held";
+  assert.equal((await runAttacks(V)).report.results[0].status, first.report.results[0].status);
+
+  assert.equal((await runAttacks(V, ["unauth:admin_drain"])).report.cache, undefined, "a different set of attacks is its own entry");
+  const custom = { id: "custom:t", name: "t", steps: [{ op: "call", id: "a", as: "attacker", method: "admin_drain", args: { receiver_id: "attacker.near" }, attack: true }], checks: [{ check: "net_at_most", account: "attacker", near: "0" }] };
+  assert.equal((await runAttacks(V, undefined, { custom: [custom] })).report.cache, undefined, "custom scenarios are never cached");
+  assert.equal((await runAttacks(V, undefined, { custom: [custom] })).report.cache, undefined);
+
+  // check_transaction reuses it and says so.
+  const ck = await checkTransaction({ receiver_id: V, method: "deposit", deposit_near: "20" });
+  assert.equal(ck.decision, "block");
+  assert.equal(typeof ck.contract.attacks_cached_age_s, "number");
+
+  const ttl = process.env.BITLENS_CACHE_TTL_S;
+  process.env.BITLENS_CACHE_TTL_S = "0";
+  try {
+    assert.equal((await runAttacks(V)).report.cache, undefined, "BITLENS_CACHE_TTL_S=0 disables the cache");
+  } finally {
+    if (ttl === undefined) delete process.env.BITLENS_CACHE_TTL_S;
+    else process.env.BITLENS_CACHE_TTL_S = ttl;
+  }
 });
