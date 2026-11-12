@@ -214,7 +214,7 @@ The LLM has one job: translate the sentence into a **scenario JSON object** in t
 | `OPEN_ROUTER_MODEL` | `deepseek/deepseek-v3.2` | the same open-weight model as the NEAR AI default, so both providers behave alike |
 | `NEAR_AI_BASE_URL`, `OPEN_ROUTER_BASE_URL` | the URLs above | overrides (the tests point them at local fakes) |
 | `LLM_TIMEOUT_S` | `120` | per-request timeout |
-| `LLM_MAX_TOKENS` | `8192` | output cap per request (without one, OpenRouter reserves the model's full output budget and refuses low-credit keys with HTTP 402) |
+| `LLM_MAX_TOKENS` | `4096` | output cap per request. OpenRouter reserves the whole cap up front and refuses a key whose credit does not cover it (HTTP 402); a scenario is ~1-2k tokens, so 4096 is plenty |
 
 With neither key set, text-to-test is off. Everything else works, including hand-written scenario JSON.
 

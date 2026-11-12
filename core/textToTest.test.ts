@@ -76,7 +76,7 @@ test("NEAR AI first: chat/completions in JSON mode → validated scenario; OpenR
   assert.equal(req.headers.authorization, "Bearer near-key");
   assert.equal(req.body.model, DEFAULT_NEAR_AI_MODEL);
   assert.deepEqual(req.body.response_format, { type: "json_object" });
-  assert.equal(req.body.max_tokens, 8192, "output is capped so low-credit keys are not refused");
+  assert.equal(req.body.max_tokens, 4096, "output is capped so low-credit keys are not refused");
   assert.equal(req.body.messages[1].content, "The attacker calls admin_drain and keeps the money");
   assert.match(req.body.messages[0].content, /admin_drain/, "the prompt lists the contract's real methods");
   assert.equal(t.provider, "NEAR AI Cloud");

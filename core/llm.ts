@@ -14,7 +14,7 @@
  * falls through to OpenRouter, and NEAR AI is skipped for a few minutes so
  * every call does not pay for the failure again.
  * LLM_TIMEOUT_S: per-request timeout, default 120.
- * LLM_MAX_TOKENS: output cap per request, default 8192.
+ * LLM_MAX_TOKENS: output cap per request, default 4096.
  */
 import { UpstreamError } from "./errors.js";
 import { httpFetch } from "./rpc.js";
@@ -25,10 +25,11 @@ export const DEFAULT_OPEN_ROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 /** Same open-weight model as the NEAR AI default, so both providers behave alike. */
 export const DEFAULT_OPEN_ROUTER_MODEL = "deepseek/deepseek-v3.2";
 /**
- * Output cap per request. A scenario is ~1-2k tokens; without a cap OpenRouter
- * reserves the model's full output budget and refuses low-credit keys (HTTP 402).
+ * Output cap per request. A scenario is ~1-2k tokens; OpenRouter reserves the
+ * whole cap up front and refuses a key whose credit does not cover it (HTTP 402),
+ * so the cap is kept small: 4096 is well above what a scenario needs.
  */
-export const DEFAULT_MAX_TOKENS = 8192;
+export const DEFAULT_MAX_TOKENS = 4096;
 const COOL_DOWN_MS = 5 * 60_000;
 
 const env = (k: string) => process.env[k]?.trim() || undefined;
