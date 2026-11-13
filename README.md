@@ -46,7 +46,7 @@ account id ─view_code RPC─▶ WASM ─▶ ① risk card ─▶ ② attacks i
 ### Steps (each with expected output)
 
 1. `npm install`
-2. `npm test` → `# pass 40`, `# fail 0` (account-id validation, capability detection, RPC errors and the offline fallback against a fake RPC, attack selection, verdict rules, the pre-signature allow / confirm / block policy, scenario validation, and text-to-test with its NEAR AI → OpenRouter fallback against two fake LLM servers; no network).
+2. `npm test` → `# pass 45`, `# fail 0` (account-id validation, capability detection, RPC errors and the offline fallback against a fake RPC, attack selection, verdict rules, the pre-signature allow / confirm / block policy, scenario validation, text-to-test with its NEAR AI → OpenRouter fallback against two fake LLM servers, and MCP over HTTP with the SDK client; no network).
 3. `npm run build:runner` (the first-build warning above applies) → ends with `Finished \`release\` profile [optimized]`; the binary is `runner/target/release/bitlens-runner`. You can skip this: the server and MCP server start the same build in the background if the binary is missing.
 4. `npm run test:sim` → `# pass 11`, ~3 s. Pins the status of **every** scenario on all four demo contracts, plus the risk level and verdict, through the real engine. It also runs custom scenario JSON end to end, checks that the runner rejects malformed scenarios on its own, checks that the text-to-test eval set's expected results match these pinned statuses, pins `check_transaction`'s decision for a 20 NEAR deposit into each demo contract, and checks the results cache. If it passes, the demo tells the same story.
    `npm run test:runner` runs the runner's Rust unit tests (argument discovery from contract errors).
@@ -163,6 +163,28 @@ claude mcp add bitlens -- "$PWD/node_modules/.bin/tsx" "$PWD/mcp/server.ts"
 ```
 
 `claude mcp list` → `bitlens: … - ✓ Connected`.
+
+### MCP over HTTP (remote agents)
+
+The HTTP server also serves the same six tools at **`POST /mcp`** (MCP Streamable HTTP, stateless: a fresh MCP server per request, JSON responses, no sessions or SSE). It runs in the same process as the web app, so it shares the engine warm-up and the results cache. A remote agent needs no SSH and no local build.
+
+- **Off by default.** Set `BITLENS_MCP_TOKEN` (e.g. `openssl rand -hex 32`) to turn it on; without it `/mcp` answers `404 MCP_DISABLED`.
+- **Bearer token.** Every request needs `Authorization: Bearer <token>` (constant-time compare; the token is never logged). Missing or wrong → `401` with `WWW-Authenticate: Bearer`. `GET`/`DELETE /mcp` → `405`.
+- **Behind nginx,** give `/mcp` the same long timeout as the slow endpoints (`location ~ ^/(attack|translate|check|mcp)$`): one `check_transaction` runs every attack.
+- **Add it to Claude Code:**
+  ```bash
+  claude mcp add --transport http bitlens https://<your-api-host>/mcp --header "Authorization: Bearer <token>"
+  claude mcp list    # bitlens: … (HTTP) - ✓ Connected
+  ```
+- **Check it with curl:** `curl -s -X POST https://<your-api-host>/mcp -H "Authorization: Bearer <token>" -H "content-type: application/json" -H "accept: application/json, text/event-stream" -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"curl","version":"0"}}}'` → JSON with `"serverInfo":{"name":"bitlens",…}`.
+- **stdio is unchanged:** `npm run mcp` and the config blocks above work as before.
+- **The token sits in plain text** in each client's Claude Code config. Rotate it by changing `BITLENS_MCP_TOKEN` and restarting the server.
+
+Verified locally: `BITLENS_MCP_TOKEN=dev npm run server`, the `claude mcp add --transport http … http://localhost:8787/mcp` config, and headless Claude Code asked "is it safe to deposit 20 NEAR into vulnerable-vault.bitlens-demo?" → **BLOCK**, with the `admin_drain` drain (67.8 NEAR) as proof and the replay link (3 turns, ~10 s). `npm test` covers the tool list, a tool call, bad input, 401 / 405 / 404 through the SDK's HTTP client (`server/mcpHttp.test.ts`).
+
+### Web frontend on Vercel
+
+`web/` is static and calls the API with relative URLs (`fetch("/scan")`), so it can be served by Vercel while the API runs elsewhere. `web/vercel.json` rewrites `/health`, `/scan`, `/attacks`, `/attack`, `/engine`, `/llm`, `/translate` and `/check` to the API host (no CORS, no JS change), turns off Vercel's caching of those rewrites (scan results must never be cached), and uses `cleanUrls` so `/app` serves `app.html` as the Node server does. `/mcp` is deliberately not rewritten: MCP clients talk to the API host directly. Vercel project: Root Directory `web`, preset Other, no build command.
 
 **Verified agent run: pre-signature check** (headless Claude Code, only `check_transaction` and `assess_contract` allowed; 3 turns, ~11 s):
 
@@ -391,6 +413,7 @@ CLI:
 Environment:
 - `NEAR_RPC_URL`: comma-separated RPC URLs. Testnet works too.
 - `PORT`: default 8787.
+- `BITLENS_MCP_TOKEN`: turns on MCP over HTTP at `POST /mcp` and is the bearer token it requires (unset = `/mcp` off). See *MCP over HTTP*.
 - `BITLENS_RUNNER_BIN`: path to a prebuilt runner.
 - `BITLENS_CACHE_DIR`: where the offline code copies go (default `.cache/code/`).
 - `BITLENS_CACHE_TTL_S`: how long attack results stay in the in-memory cache (default `600`; `0` disables it). See *Results cache*.
@@ -400,10 +423,10 @@ Environment:
 
 ```
 core/       the one engine: RPC, scan, capability rules, attack selection, scenario schema + presets, text-to-test (LLM: NEAR AI → OpenRouter), verdict, runner bridge
-server/     HTTP front door (thin) + static web UI from web/
-mcp/        MCP front door (thin, stdio)
+server/     HTTP front door (thin) + static web UI from web/ + MCP over HTTP (POST /mcp, bearer token)
+mcp/        MCP front door (thin): createMcpServer(); stdio when run directly, HTTP via server/ (POST /mcp)
 cli/        scan / attack CLIs (thin)
-web/        static HTML/CSS/JS: index.html (landing page), app.html + app.js (the app, at /app), replay.js + replay.css (attack replay animation), hero.js (the landing page's looping replay of a recorded real run), logo.svg; all app text rendered via textContent
+web/        static HTML/CSS/JS: index.html (landing page), app.html + app.js (the app, at /app), replay.js + replay.css (attack replay animation), hero.js (the landing page's looping replay of a recorded real run), logo.svg, vercel.json (Vercel deploy: API rewrites); all app text rendered via textContent
 runner/     Rust scenario interpreter over near-contract-sim (scenario.rs: format + validation, interp.rs: execution)
 scenarios/  presets/*.json (the six attack templates as canned scenario JSON), examples/*.json
 contracts/  clean / risky / vulnerable / yield-escrow demo contracts (near-sdk 5.29) + res/*.wasm
