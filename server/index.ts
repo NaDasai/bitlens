@@ -10,8 +10,11 @@
  *   POST /translate {"account_id","sentence"}    English → scenario JSON (NEAR AI Cloud, fallback OpenRouter)
  *   POST /check {"receiver_id","method","deposit_near"?,"args"?,"mode"?}  judge a transaction before signing: allow / confirm / block
  *   GET  /llm                        text-to-test LLM configuration (never the key)
+ *   POST /mcp    MCP over HTTP (Streamable HTTP, stateless, JSON responses): the same six tools as
+ *                the stdio server. Off unless BITLENS_MCP_TOKEN is set; needs Authorization: Bearer <token>.
  *   GET  /       landing page;  GET /app  the web app (static, web/)
  */
+import { timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { readFile } from "node:fs/promises";
 import { extname, join, normalize, resolve } from "node:path";
@@ -33,6 +36,8 @@ import {
   warmReady,
   warmupSpec,
 } from "../core/index.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { createMcpServer } from "../mcp/server.js";
 
 const PORT = Number(process.env.PORT ?? 8787);
 const WEB_DIR = resolve(fileURLToPath(new URL("../web/", import.meta.url)));
@@ -73,6 +78,37 @@ async function serveStatic(pathname: string, res: ServerResponse) {
   } catch {
     sendJson(res, 404, { error: { code: "NOT_FOUND", message: `no route ${pathname}` } });
   }
+}
+
+/** Constant-time check of "Authorization: Bearer <token>". The token is never logged. */
+function bearerOk(req: IncomingMessage, token: string): boolean {
+  const got = Buffer.from(req.headers.authorization ?? "");
+  const want = Buffer.from(`Bearer ${token}`);
+  return got.length === want.length && timingSafeEqual(got, want);
+}
+
+/**
+ * MCP over HTTP, stateless: each POST gets a fresh McpServer + transport (no
+ * sessions, no SSE, JSON responses). Same process as the web app, so it shares
+ * the engine warm-up and the results cache.
+ */
+async function handleMcp(req: IncomingMessage, res: ServerResponse) {
+  const token = process.env.BITLENS_MCP_TOKEN?.trim(); // read per request, so it can be rotated in tests
+  if (!token) return sendJson(res, 404, { error: { code: "MCP_DISABLED", message: "MCP over HTTP is not enabled" } });
+  if (!bearerOk(req, token)) {
+    res.setHeader("WWW-Authenticate", "Bearer");
+    return sendJson(res, 401, { error: { code: "UNAUTHORIZED", message: "missing or invalid bearer token" } });
+  }
+  if (req.method !== "POST") return sendJson(res, 405, { jsonrpc: "2.0", error: { code: -32000, message: "Method not allowed." }, id: null });
+  const body = await readJson(req); // same 64 KB limit as the other routes
+  const mcp = createMcpServer();
+  const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
+  res.on("close", () => {
+    void transport.close();
+    void mcp.close();
+  });
+  await mcp.connect(transport);
+  await transport.handleRequest(req, res, body);
 }
 
 export const server = createServer(async (req, res) => {
@@ -122,9 +158,13 @@ export const server = createServer(async (req, res) => {
       return sendJson(res, 200, await checkTransaction(body.transaction ?? body, body.mode ?? "standard"));
     }
 
+    if (url.pathname === "/mcp") return await handleMcp(req, res);
+
     if (req.method === "GET") return serveStatic(url.pathname, res);
     return sendJson(res, 405, { error: { code: "METHOD_NOT_ALLOWED", message: req.method } });
   } catch (e) {
+    // The MCP transport may already have answered: never write a response twice.
+    if (res.headersSent) return;
     const { status, body } = toErrorPayload(e);
     return sendJson(res, status, body);
   }

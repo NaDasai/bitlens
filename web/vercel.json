@@ -1,0 +1,16 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "cleanUrls": true,
+  "rewrites": [
+    {
+      "source": "/:endpoint(health|scan|attacks|attack|engine|llm|translate|check)",
+      "destination": "https://bitlens-api.buoya.space/:endpoint"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/:endpoint(scan|attacks|attack|engine|llm|translate|check)",
+      "headers": [{ "key": "x-vercel-enable-rewrite-caching", "value": "0" }]
+    }
+  ]
+}
