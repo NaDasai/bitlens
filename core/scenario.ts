@@ -199,7 +199,7 @@ export function fillPreset(name: string, params: Record<string, unknown>): Scena
   const tpl = PRESETS[name];
   if (!tpl) throw new Error(`no preset ${name}`);
   const sub = (s: string) =>
-    s.replace(/\{\{(\w+)\}\}/g, (m, k: string) => {
+    s.replace(/\{\{(\w+)\}\}/g, (_m, k: string) => {
       if (!(k in params)) throw new Error(`preset ${name}: missing parameter ${k}`);
       return String(params[k]);
     });

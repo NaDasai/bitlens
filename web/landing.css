@@ -47,7 +47,6 @@ h1 span { color: var(--accent); }
 .verdict.bad { background: var(--red); color: #fff; }
 .checks { list-style: none; margin: 14px 0; padding: 0; display: grid; gap: 10px; font-size: 14px; }
 .checks li { display: flex; gap: 10px; align-items: baseline; }
-.checks .more { padding-left: 2px; }
 .st { flex: none; font: 700 11px var(--mono); padding: 2px 7px; border-radius: 5px; letter-spacing: .4px; }
 .st.broken { background: #3d1418; color: var(--red); border: 1px solid #6e2228; }
 .st.held { background: #10301a; color: var(--green); border: 1px solid #1f5a2f; }
@@ -116,6 +115,9 @@ h3 { margin: 0 0 8px; font-size: 18px; }
 .code-head { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 13px; }
 .copy { cursor: pointer; background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 3px 10px; font: 12px system-ui, sans-serif; }
 .copy:hover { border-color: var(--accent); }
+.selfhost { margin-top: 6px; border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; }
+.selfhost summary { cursor: pointer; color: var(--muted); font-size: 14px; }
+.selfhost[open] summary { margin-bottom: 12px; }
 .code pre { margin: 0; padding: 14px; overflow-x: auto; font: 12.5px/1.55 var(--mono); color: #c9d1d9; }
 .chat { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 18px; display: grid; gap: 12px; }
 .msg { border-radius: 10px; padding: 12px 14px; font-size: 15px; }

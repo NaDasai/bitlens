@@ -106,7 +106,7 @@
 <section id="mcp" class="wrap section mcp">
   <p class="eyebrow">For AI agents</p>
   <h2>An MCP server: your agent checks before it signs</h2>
-  <p class="lead small-lead">Before signing, the agent hands BitLens the transaction it is about to send. BitLens attacks the contract in a local simulator and answers <b>allow</b>, <b>confirm</b> or <b>block</b>, with the attack that proves it. BitLens never signs: the agent's wallet signs only on allow. MCP server over stdio (official SDK); every tool is read-only and validates its input.</p>
+  <p class="lead small-lead">Before signing, the agent hands BitLens the transaction it is about to send. BitLens attacks the contract in a local simulator and answers <b>allow</b>, <b>confirm</b> or <b>block</b>, with the attack that proves it. BitLens never signs: the agent's wallet signs only on allow. Hosted MCP server over HTTPS (Streamable HTTP, bearer token), or self-hosted over stdio; every tool is read-only and validates its input.</p>
 
   <div class="tools">
     <div class="tool-key"><code>check_transaction</code><p>Call it right before signing: <b>allow</b> / <b>confirm</b> / <b>block</b>, with the proof and a replay link.</p></div>
@@ -121,12 +121,31 @@
     <div>
       <h3>Add it in one line</h3>
       <div class="code">
-        <div class="code-head"><span>Claude Code</span><button type="button" class="copy" data-copy="cc">Copy</button></div>
-        <pre id="cc"><code>claude mcp add bitlens -- "$PWD/node_modules/.bin/tsx" "$PWD/mcp/server.ts"</code></pre>
+        <div class="code-head"><span>Claude Code (hosted, HTTPS)</span><button type="button" class="copy" data-copy="cc">Copy</button></div>
+        <pre id="cc"><code>claude mcp add --transport http bitlens https://bitlens-api.buoya.space/mcp --header "Authorization: Bearer &lt;your-token&gt;"</code></pre>
       </div>
       <div class="code">
-        <div class="code-head"><span>Claude Desktop / any MCP client</span><button type="button" class="copy" data-copy="json">Copy</button></div>
+        <div class="code-head"><span>Any MCP client (Streamable HTTP)</span><button type="button" class="copy" data-copy="json">Copy</button></div>
         <pre id="json"><code>{
+  "mcpServers": {
+    "bitlens": {
+      "type": "http",
+      "url": "https://bitlens-api.buoya.space/mcp",
+      "headers": { "Authorization": "Bearer &lt;your-token&gt;" }
+    }
+  }
+}</code></pre>
+      </div>
+      <p class="muted small">The hosted server needs a bearer token: ask the BitLens team for one. Then <code>claude mcp list</code> shows <code>bitlens … ✓ Connected</code>.</p>
+      <details class="selfhost">
+        <summary>Self-host instead (stdio, no token)</summary>
+        <div class="code">
+          <div class="code-head"><span>Claude Code, from a clone of the repo</span><button type="button" class="copy" data-copy="cc-local">Copy</button></div>
+          <pre id="cc-local"><code>claude mcp add bitlens -- "$PWD/node_modules/.bin/tsx" "$PWD/mcp/server.ts"</code></pre>
+        </div>
+        <div class="code">
+          <div class="code-head"><span>Claude Desktop / any MCP client (stdio)</span><button type="button" class="copy" data-copy="json-local">Copy</button></div>
+          <pre id="json-local"><code>{
   "mcpServers": {
     "bitlens": {
       "command": "/ABSOLUTE/PATH/TO/bitlens/node_modules/.bin/tsx",
@@ -134,8 +153,9 @@
     }
   }
 }</code></pre>
-      </div>
-      <p class="muted small">Run it from a clone of the repo after <code>npm install</code> and <code>npm run build:runner</code>. Plain-English attacks need <code>NEAR_AI_API_KEY</code> or <code>OPEN_ROUTER_KEY</code>.</p>
+        </div>
+        <p class="muted small">After <code>npm install</code> and <code>npm run build:runner</code>. Plain-English attacks need <code>NEAR_AI_API_KEY</code> or <code>OPEN_ROUTER_KEY</code>. You can also serve MCP over HTTP yourself: set <code>BITLENS_MCP_TOKEN</code> and run <code>npm run server</code>.</p>
+      </details>
     </div>
     <div class="chat">
       <div class="msg user"><span class="who">You</span>Deposit 20 NEAR into vulnerable-vault.bitlens-demo.</div>

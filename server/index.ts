@@ -23,7 +23,6 @@ import {
   checkTransaction,
   InputError,
   llmStatus,
-  scan as scanCard,
   translateToScenario,
   engineStatus,
   EngineNotReadyError,
@@ -129,7 +128,7 @@ export const server = createServer(async (req, res) => {
 
     if (url.pathname === "/translate" && req.method === "POST") {
       const body = await readJson(req);
-      const card = await scanCard(body.account_id); // validates account_id
+      const card = await scan(body.account_id); // validates account_id
       const t = await translateToScenario(body.sentence, card);
       return sendJson(res, 200, { account_id: card.account_id, ...t });
     }
