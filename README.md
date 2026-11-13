@@ -9,7 +9,7 @@ account id ─view_code RPC─▶ WASM ─▶ ① risk card ─▶ ② attacks i
                                      (capabilities,     (local nearcore runtime:          safe /
                                       standards,         real gas, receipts, callbacks)   caution /
                                       privileged methods)                                  dangerous
-             web UI ◀── HTTP ──┐                                  ┌── MCP (stdio) ──▶ AI agents
+             web UI ◀── HTTP ──┐                                  ┌── MCP (stdio / HTTPS) ──▶ AI agents
                                └────────── core/ (one engine) ────┘
 
   "the attacker calls admin_drain and keeps the money" ─LLM─▶ scenario JSON ─▶ same runner
@@ -110,7 +110,7 @@ The four demo contracts (`contracts/*/src/lib.rs`, WASM committed in `contracts/
 
 ## MCP server (for AI agents)
 
-An agent that is about to call, deposit into or approve a NEAR contract can ask BitLens first. The server speaks stdio with the official `@modelcontextprotocol/sdk`.
+An agent that is about to call, deposit into or approve a NEAR contract can ask BitLens first. The server uses the official `@modelcontextprotocol/sdk`, over stdio (self-hosted, below) or over HTTPS at `POST /mcp` with a bearer token (see *MCP over HTTP*).
 
 | Tool | Does | Speed |
 |---|---|---|
@@ -165,6 +165,8 @@ claude mcp add bitlens -- "$PWD/node_modules/.bin/tsx" "$PWD/mcp/server.ts"
 `claude mcp list` → `bitlens: … - ✓ Connected`.
 
 ### MCP over HTTP (remote agents)
+
+**Hosted instance:** `https://bitlens-api.buoya.space/mcp` (ask the BitLens team for a token; the web app is at `https://bitlens.buoya.space`).
 
 The HTTP server also serves the same six tools at **`POST /mcp`** (MCP Streamable HTTP, stateless: a fresh MCP server per request, JSON responses, no sessions or SSE). It runs in the same process as the web app, so it shares the engine warm-up and the results cache. A remote agent needs no SSH and no local build.
 
