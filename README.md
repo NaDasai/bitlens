@@ -4,6 +4,8 @@
 
 Hackathon track: AI Security & Defense.
 
+**Live demo:** https://bitlens-web.vercel.app (web app at `/app`; try the `vulnerable-vault` demo → **Run 8 attacks** → DANGEROUS). MCP over HTTPS: `https://bitlens-api.buoya.space/mcp` (bearer token).
+
 ```
 account id ─view_code RPC─▶ WASM ─▶ ① risk card ─▶ ② attacks in near-contract-sim ─▶ verdict
                                      (capabilities,     (local nearcore runtime:          safe /
@@ -166,7 +168,7 @@ claude mcp add bitlens -- "$PWD/node_modules/.bin/tsx" "$PWD/mcp/server.ts"
 
 ### MCP over HTTP (remote agents)
 
-**Hosted instance:** `https://bitlens-api.buoya.space/mcp` (ask the BitLens team for a token; the web app is at `https://bitlens.buoya.space`).
+**Hosted instance:** `https://bitlens-api.buoya.space/mcp` (ask the BitLens team for a token; the web app is at `https://bitlens-web.vercel.app`).
 
 The HTTP server also serves the same six tools at **`POST /mcp`** (MCP Streamable HTTP, stateless: a fresh MCP server per request, JSON responses, no sessions or SSE). It runs in the same process as the web app, so it shares the engine warm-up and the results cache. A remote agent needs no SSH and no local build.
 
