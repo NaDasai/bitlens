@@ -450,3 +450,7 @@ evals/      text-to-test.json: the eval set (sentences + expected sim results)
 - **Text-to-test is only as good as the translation.** The LLM can misread a sentence. That is why the JSON is shown, and can be edited, before it runs, and why a result only means what its checks say. The provider chain is unit-tested against two fake OpenAI-compatible servers: request shape, JSON mode, every fallback path, the cool-down, and the repair round.
 - **Fresh state.** The sim starts from a fresh `init`, not a copy of the contract's mainnet storage.
 - **First build is heavy** (see above). After that a full assessment takes ~0.2-1 s.
+
+## License
+
+MIT, see [LICENSE](LICENSE).
